@@ -17,8 +17,14 @@ require 'multiPattern.PatternLocalisation'
 
 
 local function tryRequire(module_name)
-  return pcall(function() return require(module_name) end)
+  local ok, val = pcall(function() return require(module_name) end)
+  if ok then
+    return val
+  else
+    return nil
+  end
 end
+
 
 local slstudio = tryRequire('slstudio')
 
@@ -302,7 +308,7 @@ end
 
 
 local function tryLoadCurrentCameraCalibration(self, camera_serial)
-  local current_output_directory = path.join(configuration.output_directory, 'current')
+  local current_output_directory = path.join(self.configuration.output_directory, 'current')
   local calbration_fn = string.format('cam_%s.t7', camera_serial)
   local calibration_file_path = path.join(current_output_directory, calbration_fn)
 
@@ -335,7 +341,7 @@ function AutoCalibration:runCaptureSequence()
   local left_camera = configuration.cameras[configuration.left_camera_id]
   local right_camera = configuration.cameras[configuration.right_camera_id]
 
-
+  local mode = configuration.calibration_mode
   if mode == CalibrationMode.StructuredLightSingleCamera then
     assert(slstudio ~= nil, 'Structured light scanning module could not be loadad.')
     assert(left_camera ~= nil, "Left camera for SL scanning not correctly configured.")
@@ -357,11 +363,12 @@ function AutoCalibration:runCaptureSequence()
       printf("No existing camera calibration found for camera '%s'.", left_camera.serial)
     end
 
+    print('using cam', left_camera)
     local result = slstudio:initCalibration(
-      left_camera.exposure,
+      left_camera.exposure / 1000,
       intrinsics,
       distortion,
-      configuration.checkerboard_pattern_geometry:float(), 
+      configuration.checkerboard_pattern_geometry:float(),
       slstudio.CAMERA_ROS,
       left_camera.serial,
       path.join(output_directory, 'sls'),
@@ -378,7 +385,6 @@ function AutoCalibration:runCaptureSequence()
     -- move to capture pose
     moveJ(self, p)
 
-    local mode = configuration.calibration_mode
     if mode == CalibrationMode.SingleCamera or mode == CalibrationMode.StereoRig then
 
       if left_camera ~= nil then
@@ -512,7 +518,7 @@ function AutoCalibration:monoStructuredLightCalibration()
 
   slstudio:snapAndVerify()
 
-  -- generate calibartion calibratio 
+  -- generate calibartion calibratio
   local calib_errors = torch.FloatTensor({0, 0, 0})
   slstudio:calibrate(calib_errors)
   print("CALIB ERRORS:")
