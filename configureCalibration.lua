@@ -1,19 +1,34 @@
-local ros = require 'ros'
-local datatypes = require 'xamlamoveit.datatypes'
-local motionLibrary = require 'xamlamoveit.motionLibrary'
-local xutils = require 'xamlamoveit.xutils'
-local grippers = require 'xamlamoveit.grippers'
-require 'ximea.ros.XimeaClient'
-require 'AutoCalibration'
+#!/usr/bin/env th
 
+--[[
+
+  Xamla Auto Camera Calibration
+
+  Copyright 2018 Andreas Koepf, Xamla/PROVISIO GmbH
+  All rights reserved.
+
+]]
 
 --[[
 Shell command to increase USB buffers (e.g. required for Ximea cams to work):
 > sudo tee /sys/module/usbcore/parameters/usbfs_memory_mb >/dev/null <<<0
 ]]
 
+local ros = require 'ros'
+local datatypes = require 'xamlamoveit.datatypes'
+local motionLibrary = require 'xamlamoveit.motionLibrary'
+local xutils = require 'xamlamoveit.xutils'
+local grippers = require 'xamlamoveit.grippers'
+local autoCalibration = require 'autoCalibration_env'
+local CalibrationMode = autoCalibration.CalibrationMode
+require 'ximea.ros.XimeaClient'
+require 'AutoCalibration'
+
 
 local GET_CONNECTED_DEVICES_SERVICE_NAME = '/ximea_mono/get_connected_devices'
+local DEFAULT_CAMERA_ID = 'left'
+local DEFAULT_EXPOSURE = 120000
+local DEFAULT_SLEEP_BEFORE_CAPTURE = 1.0
 
 
 local motion_service -- motion service
@@ -21,27 +36,43 @@ local move_group -- move group
 local auto_calibration
 local ximea_client -- ximea client
 local prompt
-
-
 local move_group_names, move_group_details
 local ximea_serials
 local filename = 'configuration.t7'
 
 
+-- create Camera configuration table
+local function createCameraConfiguration(id, serial, exposure, sleep_before_capture)
+  return {
+    id = id,
+    serial = serial,
+    exposure = exposure or DEFAULT_EXPOSURE,    -- wait time in microsecongs
+    sleep_before_capture = sleep_before_capture or DEFAULT_SLEEP_BEFORE_CAPTURE   -- wait time in s
+  }
+end
+
+
 local configuration = {
   move_group_name = nil,
-  camera_serial = nil,
-  exposure = 120000,
-  sleep_before_capture = 1.0,
+  calibration_mode = CalibrationMode.Mono,
+  cameras = {},
+  left_camera_id = nil,
+  right_camera_id = nil,
   output_directory = './calibration/',
   calibration_name_template = '%Y-%m-%d_%H%M%S',
   circle_pattern_geometry = torch.Tensor({21, 8, 5.0}), -- rows, cols, pointDist
   circle_pattern_id = 21,
+  checkerboard_pattern_geometry = torch.Tensor({7, 11, 10}),
   velocity_scaling = 0.2,
-  scan = false,
   base_poses = {},
   capture_poses = {},
 }
+
+
+local function getCameraIds()
+  return table.keys(configuration.cameras)
+end
+
 
 
 local function queryXimeaSerials(nh)
@@ -286,7 +317,7 @@ local function showActuatorMenu()
 end
 
 
-local function showCurrentConfiguration()
+local function dumpConfiguration()
   prompt:printTitle('Current configuration')
   print(configuration)
   prompt:anyKey()
@@ -296,7 +327,7 @@ end
 local function createMoveGroup()
   move_group = motion_service:getMoveGroup(configuration.move_group_name)
   move_group:setVelocityScaling(0.2)
-  auto_calibration = AutoCalibration(configuration, move_group, ximea_client)
+  auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, ximea_client)
 end
 
 
@@ -322,41 +353,6 @@ local function selectMoveGroup()
     end
 
     createMoveGroup()
-  end
-  prompt:anyKey()
-end
-
-
-local function selectCameraSerial()
-  prompt:printTitle('Select Camera Serial')
-  printf("Selected camera S/N: %s", configuration.camera_serial or 'N/A')
-  if ximea_serials ~= nil and #ximea_serials > 0 then
-    local choice = prompt:chooseFromList(ximea_serials, 'Available Ximea cameras:')
-    if choice == nil then
-      return
-    elseif configuration.camera_serial == choice then
-      print('Camera not changed.')
-    else
-      configuration.camera_serial = choice
-      printf("Changed camera serial to: '%s'", configuration.camera_serial)
-    end
-  else
-    print('No camera available.')
-  end
-  prompt:anyKey()
-end
-
-
-local function setCameraExposure()
-  prompt:printTitle('Set Camera Exposure')
-  printf('Current exposure value: %f ms', configuration.exposure / 1000.0)
-  print('Enter exposure duration (in ms):')
-  local value = prompt:readNumber()
-  if value ~= nil and value > 0 and value == value then -- last is check for NaN
-    configuration.exposure = math.floor(value * 1000.0)
-    printf('New exposure value: %f ms', configuration.exposure * 1000)
-  else
-    print('Invalid exposure value. Nothing changed.')
   end
   prompt:anyKey()
 end
@@ -444,6 +440,25 @@ local function setVelocityScaling()
 end
 
 
+local function setCalibrationMode(mode)
+  configuration.calibration_mode = mode
+  printf('New calibration mode: %s', configuration.calibration_mode)
+  prompt:anyKey()
+end
+
+
+local function selectCalibrationMode()
+  local menu_options =
+  {
+    { '1', 'Mono camera calibration', function() setCalibrationMode(CalibrationMode.Mono) end },
+    { '2', 'Stereo camera calibraiton', function() setCalibrationMode(CalibrationMode.Stereo) end },
+    { '3', 'Mono structured light calibration', function() setCalibrationMode(CalibrationMode.CalibrationMode.StructuredLightMono) end },
+    { 'ESC', 'Return to main menu', false },
+  }
+  prompt:showMenu('Main Menu', menu_options)
+end
+
+
 local function saveConfiguration()
   prompt:printTitle('Save Configuration')
   printf("Enter filename: (leave empty to use default filename '%s')", filename)
@@ -457,22 +472,124 @@ local function saveConfiguration()
 end
 
 
-local function showMainMenu()
+local function addCameraConfiguration()
+  local default_id = DEFAULT_CAMERA_ID
+  prompt:printTitle('Add Camera')
+  printf("Enter ID of camera configuration (default '%s'):", default_id)
+  local id = prompt:readLine()
+  if id == nil or #id == 0 then
+    id = default_id
+  end
+  local existing_ids = getCameraIds()
+end
+
+
+local function deleteCameraConfiguration(id)
+  configuration.cameras
+end
+
+
+local function selectCameraSerial()
+  prompt:printTitle('Select Camera Serial')
+  printf("Selected camera S/N: %s", configuration.camera_serial or 'N/A')
+  if ximea_serials ~= nil and #ximea_serials > 0 then
+    local choice = prompt:chooseFromList(ximea_serials, 'Available Ximea cameras:')
+    if choice == nil then
+      return
+    elseif configuration.camera_serial == choice then
+      print('Camera not changed.')
+    else
+      configuration.camera_serial = choice
+      printf("Changed camera serial to: '%s'", configuration.camera_serial)
+    end
+  else
+    print('No camera available.')
+  end
+  prompt:anyKey()
+end
+
+
+local function setCameraExposure(serial)
+  prompt:printTitle('Set Camera Exposure')
+  printf('Current exposure value: %f ms', configuration.exposure / 1000.0)
+  print('Enter exposure duration (in ms):')
+  local value = prompt:readNumber()
+  if value ~= nil and value > 0 and value == value then -- last is check for NaN
+    configuration.exposure = math.floor(value * 1000.0)
+    printf('New exposure value: %f ms', configuration.exposure * 1000)
+  else
+    print('Invalid exposure value. Nothing changed.')
+  end
+  prompt:anyKey()
+end
+
+
+local function editCamera(serial)
   local menu_options =
   {
-    { '1', 'Show current configuration', showCurrentConfiguration },
-    { '2', 'Select move-group', selectMoveGroup },
-    { '3', 'Select camera serial', selectCameraSerial },
-    { '4', 'Set camera exposure', setCameraExposure },
-    { '5', 'Set pattern ID', setPatternId },
-    { '6', 'Teach base poses',  teachBasePoses },
-    { '7', 'Teach capture poses', teachCapturePoses },
-    { '8', 'Set velocity scaling', setVelocityScaling },
-    { '9', 'Actuator menu', showActuatorMenu },
-    { 's', 'Save configuration',  saveConfiguration },
-    { 'ESC', 'Quit', false },
+    { '1', 'Edit camera exposure duration', function() return setCameraExposure(serial) end },
+    { '2', 'Delete camera configuration', function() return deleteCameraConfiguration(serial) end },
+    { 'ESC', 'Return to camera menu', false }
   }
-  prompt:showMenu('Main Menu', menu_options)
+  prompt:showMenu(string.format("Camera Configuration '%s'", serial), menu_options)
+end
+
+
+local function selectCamera(camera_type)
+  prompt:printTitle(string.format("Select Camera '%s'", camera_type))
+  printf("Selected camera ID: %s", configuration[camera_type] or 'N/A')
+
+  local ids = getCameraIds()
+  if ids ~= nil and #ids > 0 then
+    local choice = prompt:chooseFromList(ids, 'Available Ximea cameras:')
+    if choice == nil then
+      return
+    else
+      configuration[camera_type] = choice
+      printf("Set %s to camera ID '%s'.", camera_type, choice)
+    end
+  else
+    print('No camera configuration available. Please add a camera configuration first.')
+  end
+  prompt:anyKey()
+end
+
+
+local function editCameraSetup()
+
+  local generateMenuOptions = function()
+    local menu_options = 
+    {
+      { '1', 'Add camera configuration', addCameraConfiguration },
+      { '2', string.format("Select left camera ('%s') (used for single cam/SL calibration)", configuration.right_camera_id), function() selectCamera('left_camera_id') end },
+      { '3', string.format("Select right camera ('%s')", configuration.right_camera_id), function() selectCamera('right_camera_id') end   }
+    }
+    menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
+    return menu_options
+  end
+
+  prompt:showMenu('Camera Setup', generateMenuOptions)
+end
+
+
+local function showMainMenu()
+  -- use generator function to display current configuration values
+  local generateMenuOptions = function()
+    return {
+      { '1', string.format('Set calibration mode (%s)', configuration.calibration_mode), selectCalibrationMode },
+      { '2', string.format("Select move-group ('%s')", configuration.move_group_name), selectMoveGroup },
+      { '3', string.format('Edit camera setup (%d configured)', #configuration.cameras), editCameraSetup },
+      { '4', string.format('Set circle pattern ID (%d)', configuration.circle_pattern_id), setPatternId },
+      { '5', 'Teach base poses',  teachBasePoses },
+      { '6', string.format('Teach capture poses (%d defined)', #configuration.capture_poses), teachCapturePoses },
+      { '7', string.format('Set velocity scaling (%f)', configuration.velocity_scaling), setVelocityScaling },
+      { '8', 'Actuator menu', showActuatorMenu },
+      { '9', 'Dump configuration', dumpConfiguration },
+      { 's', 'Save configuration',  saveConfiguration },
+      { 'ESC', 'Quit', false },
+    }
+  end
+  prompt:showMenu('Main Menu', generateMenuOptions)
 end
 
 
@@ -490,8 +607,10 @@ local function main(nh)
   -- query camera serial numbers
   ximea_serials = {}
   ximea_serials = queryXimeaSerials(nh)
-  if #ximea_serials > 0 and (configuration.camera_serial == nil or #configuration.camera_serial == 0) then
-    configuration.camera_serial = ximea_serials[1]
+  if #ximea_serials > 0 and #configuration.cameras == 0 then
+    -- create default configuration left
+    configuration.cameras[DEFAULT_CAMERA_ID] = createCameraConfiguration(DEFAULT_CAMERA_ID, ximea_serials[1])
+    configuration.left_camera_id = DEFAULT_CAMERA_ID
   end
 
   if #ximea_serials > 0 then

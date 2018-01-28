@@ -1,9 +1,23 @@
 #!/usr/bin/env th
+--[[
+
+  Configuration script for the
+  Xamla Auto Camera Calibration 
+
+  Copyright 2018 Andreas Koepf, Xamla/PROVISIO GmbH
+  All rights reserved.
+
+  This script is part of the Rosvita robot programming system.
+  You may only use it in production when you own a valid
+  Rosvita license.
+
+]]
 local ros = require 'ros'
 local datatypes = require 'xamlamoveit.datatypes'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
 local xutils = require 'xamlamoveit.xutils'
 local grippers = require 'xamlamoveit.grippers'
+local autoCalibration = require 'autoCalibration_env'
 require 'ximea.ros.XimeaClient'
 require 'AutoCalibration'
 
@@ -177,7 +191,7 @@ local function main(nh)
   move_group:setVelocityScaling(configuration.velocity_scaling)
   printf('Set velocity scaling: %f', configuration.velocity_scaling)
 
-  auto_calibration = AutoCalibration(configuration, move_group, ximea_client)
+  auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, ximea_client)
 
   showMainMenu()
 end

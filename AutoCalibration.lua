@@ -2,6 +2,9 @@ local ros = require 'ros'
 local actionlib = ros.actionlib
 local SimpleClientGoalState = actionlib.SimpleClientGoalState
 local xutils = require 'xamlamoveit.xutils'
+local autoCalibration = require 'autoCalibration_env'
+local CalibrationFlags = autoCalibration.CalibrationFlags
+local CalibrationMode = autoCalibration.CalibrationMode
 
 local cv = require 'cv'
 require 'cv.imgproc'
@@ -13,27 +16,25 @@ require 'ximea.ros.XimeaClient'
 require 'multiPattern.PatternLocalisation'
 
 
-local DEFAULT_CALIBRATION_FLAGS = {
-  CALIB_USE_INTRINSIC_GUESS  = false,    -- cameraMatrix contains valid initial values of fx, fy, cx, cy that are optimized further. Otherwise, (cx, cy) is initially set to the image center (imageSize is used), and focal distances are computed in a least-squares fashion. Note, that if intrinsic parameters are known, there is no need to use this function just to estimate extrinsic parameters. Use solvePnP() instead.
-  CALIB_FIX_PRINCIPAL_POINT  = false,    -- The principal point is not changed during the global optimization. It stays at the center or at a different location specified when CV_CALIB_USE_INTRINSIC_GUESS is set too.
-  CALIB_FIX_ASPECT_RATIO     = false,    -- The functions considers only fy as a free parameter. The ratio fx/fy stays the same as in the input cameraMatrix . When CV_CALIB_USE_INTRINSIC_GUESS is not set, the actual input values of fx and fy are ignored, only their ratio is computed and used further.
-  CALIB_ZERO_TANGENT_DIST    = true,     -- Tangential distortion coefficients (p_1, p_2) are set to zeros and stay zero.
-  CALIB_FIX_K1               = false,
-  CALIB_FIX_K2               = false,
-  CALIB_FIX_K3               = true,
-  CALIB_RATIONAL_MODEL       = false,
-  CALIB_FIX_K4               = true,
-  CALIB_FIX_K5               = true,
-  CALIB_FIX_K6               = true
+local GraspingState = {
+  Idle = 0,
+  NoPartFound = 2,
+  PartLost = 3,
+  Hold = 4,
 }
 
-local GRIPPER_HOLD = 4
-local GRIPPER_NO_PART_FOUND = 2
-local GRIPPER_PART_LOST = 3
-local GRIPPER_IDLE = 0
+
+local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalibration)
 
 
-local AutoCalibration = torch.class('AutoCalibration')
+local function initializeGripperServices(self)
+  local node_handle = ros.NodeHandle()
+  self.node_handle = node_handle
+  self.gripper_status_client = node_handle:serviceClient('/wsg_50_driver/get_gripper_status', 'wsg_50_common/GetGripperStatus')
+  self.ack_error_client = node_handle:serviceClient('/wsg_50_driver/acknowledge_error', 'std_srvs/Empty')
+  self.set_force_client = node_handle:serviceClient('/wsg_50_driver/set_force', 'wsg_50_common/Conf')
+  self.gripper_action_server = actionlib.SimpleActionClient('wsg_50_common/Command', '/wsg_50_driver/gripper/command', self.node_handle)
+end
 
 
 function AutoCalibration:__init(configuration, move_group, ximea_client, sl_studio)
@@ -42,12 +43,10 @@ function AutoCalibration:__init(configuration, move_group, ximea_client, sl_stud
   self.ximea_client = ximea_client
   self.sl_studio = sl_studio
 
-  local node_handle = ros.NodeHandle()
-  self.node_handle = node_handle
-  self.gripper_status_client = node_handle:serviceClient('/wsg_50_driver/get_gripper_status', 'wsg_50_common/GetGripperStatus')
-  self.ack_error_client = node_handle:serviceClient('/wsg_50_driver/acknowledge_error', 'std_srvs/Empty')
-  self.set_force_client = node_handle:serviceClient('/wsg_50_driver/set_force', 'wsg_50_common/Conf')
-  self.gripper_action_server = actionlib.SimpleActionClient('wsg_50_common/Command', '/wsg_50_driver/gripper/command', self.node_handle)
+  local ok, err = pcall(function() initializeGripperServices(self) end)
+  if not ok then
+    --error('Gripper initialization failed: ' .. err)
+  end
 end
 
 
@@ -129,19 +128,20 @@ function AutoCalibration:runCaptureSequenceWithoutCapture()
 end
 
 
--- private gripper functions
 function AutoCalibration:openGripper()
   -- this funtion should use move or release depending on gripper state -> open the gripper
-  print('OPEN')
+  print('Opening gripper...')
   if self.gripper_status_client:exists() then
     if self.gripper_action_server:waitForServer(ros.Duration(5.0)) then
       local gripper_status = self.gripper_status_client:call()
       local g = self.gripper_action_server:createGoal()
       if (gripper_status ~= nil and gripper_status.status ~= nil) then
-        if gripper_status.status.grasping_state_id == GRIPPER_IDLE then
+        if gripper_status.status.grasping_state_id == GraspingState.Idle then
           g.command.command_id = 101
-        elseif gripper_status.status.grasping_state_id == GRIPPER_HOLD or gripper_status.status.grasping_state_id == GRIPPER_NO_PART_FOUND
-          or gripper_status.status.grasping_state_id == GRIPPER_PART_LOST then
+        elseif gripper_status.status.grasping_state_id == GraspingState.Hold
+          or gripper_status.status.grasping_state_id == GraspingState.NoPartFound
+          or gripper_status.status.grasping_state_id == GraspingState.PartLost then
+
           g.command.command_id = 103
         else
           ros.ERROR("Gripper is in wrong state. Please acknowledge any error and use homing. Grasping State: %d", gripper_status.status.grasping_state_id)
@@ -176,7 +176,7 @@ end
 
 
 function AutoCalibration:closeGripper()
-  print('CLOSE')
+  print('Closing gripper...')
 
   local set_force_response;
   if self.set_force_client:exists() then
@@ -197,7 +197,7 @@ function AutoCalibration:closeGripper()
 
       if state == 7 then
         if result ~= nil and result.status ~= nil then
-          if result.status.return_code == 0 and result.status.grasping_state_id == GRIPPER_HOLD then
+          if result.status.return_code == 0 and result.status.grasping_state_id == GraspingState.Hold then
             ros.INFO("Picked part successfully")
             return
           else
@@ -220,7 +220,7 @@ end
 
 
 function AutoCalibration:ackGripper()
-  print('ACK')
+  print('ACK gripper')
   if self.ack_error_client:exists() then
     local req = self.ack_error_client:createRequest()
     local r = self.ack_error_client:call(req)
@@ -232,7 +232,7 @@ end
 
 
 function AutoCalibration:homeGripper()
-  print('RESET')
+  print('Homeing gripper')
 
   if self.gripper_action_server:waitForServer(ros.Duration(5.0)) then
     local g = self.gripper_action_server:createGoal()
@@ -403,10 +403,39 @@ local function extractPoints(image_paths, pattern_localizer, pattern_id)
 end
 
 
+function AutoCalibration:monoStructuredLightCalibration()
+  -- initialize structured light scanner
+  local checkerboard_geometry = torch.FloatTensor({7, 11, 10})
+
+  --code = slstudio:initCalibration(14, internal:float(), distort:float(), checker:float(), slstudio.CAMERA_ROS, 'CAMAU1639042', '', '/tmp/slstudio/')
+  code = slstudio:initCalibration(10, nil, nil, checker:float(), slstudio.CAMERA_ROS, "CAMAU1710001", "/tmp/sls", "/tmp/newFrames/")
+
+
+
+
+  slstudio:snapAndVerify()
+
+  -- generate calibartion calibratio 
+  local calib_errors = torch.FloatTensor({0, 0, 0})
+  slstudio:calibrate(calib_errors)
+  print("CALIB ERRORS:")
+  print(calib_errors)
+
+  -- save calibration and deinit
+  slstudio:save("/tmp/calibration.xml")
+  slstudio:close()
+end
+
+
+function AutoCalibration:stereoCalibration()
+
+end
+
+
 function AutoCalibration:monoCalibration(calibrationFlags)
   local image_paths = self.file_names
   local pattern_id = self.configuration.circle_pattern_id
-  calibrationFlags = calibrationFlags or DEFAULT_CALIBRATION_FLAGS
+  calibrationFlags = calibrationFlags or CalibrationFlags.Default
 
   if image_paths == nil or #image_paths == 0 then
     local current_directory_path = path.join(self.configuration.output_directory, 'capture')
