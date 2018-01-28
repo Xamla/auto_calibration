@@ -62,6 +62,7 @@ local configuration = {
   right_camera_id = nil,
   output_directory = './calibration/',
   calibration_name_template = '%Y-%m-%d_%H%M%S',
+  calibration_flags_name = 'Default',
   circle_pattern_geometry = torch.Tensor({21, 8, 5.0}), -- rows, cols, pointDist
   circle_pattern_id = 21,
   checkerboard_pattern_geometry = torch.Tensor({7, 11, 10}),

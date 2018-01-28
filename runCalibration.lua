@@ -86,12 +86,21 @@ end
 
 
 local function calibrateCamera(wait)
-  local ok = auto_calibration:monoCalibration()
-  if ok then
-    print('Calibration result:')
-    print(auto_calibration.calibration)
-  else
-    print('Calibration failed.')
+  local mode = configuration.calibration_mode
+  if mode == CalibrationMode.SingleCamera then
+
+    local ok = auto_calibration:monoCalibration()
+    if ok then
+      print('Calibration result:')
+      print(auto_calibration.calibration)
+    else
+      print('Calibration failed.')
+    end
+
+  elseif mode == CalibrationMode.StructuredLightSingleCamera then
+
+    auto_calibration:monoStructuredLightCalibration()
+
   end
   if wait ~= false then
     prompt:anyKey()
@@ -117,39 +126,15 @@ end
 
 
 local function saveCalibration()
-  if auto_calibration.calibration == nil then
-    print('No calibration available to save.')
-  else
-
-    local mode = configuration.calibration_mode
-    if mode == CalibrationMode.SingleCamera then
-
-      local left_camera = self.configuration.cameras[configuration.left_camera_id]
-      local camera_serial = left_camera.serial
-
-      -- generate output directory path
-      local calibration_name = os.date(configuration.calibration_name_template)
-      local output_directory = path.join(configuration.output_directory, calibration_name)
-      os.execute('mkdir -p ' .. output_directory)
-      local calbration_fn = string.format('cam_%s.t7', camera_serial)
-      local calibration_file_path = path.join(output_directory, calbration_fn)
-      torch.save(calibration_file_path, auto_calibration.calibration)
-      print('Calibration saved to: ' .. calibration_file_path)
-
-      -- also linking calibration in current directory
-      local current_output_directory = path.join(configuration.output_directory, 'current')
-      local current_output_path = path.join(current_output_directory, calbration_fn)
-      os.execute('mkdir -p ' .. current_output_directory)
-      os.execute('rm ' .. current_output_path)
-      local link_target = path.join('..', calibration_name, calbration_fn)
-      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-      printf("Created link in '%s' -> '%s'", current_output_path, link_target)
-    elseif mode == CalibrationMode.StructuredLightSingleCamera then
-      print('TODO')
-    elseif mode == CalibrationMode.StereoRig then
-      print('TODO')
-    end
+  local mode = configuration.calibration_mode
+  if mode == CalibrationMode.SingleCamera then
+    auto_calibration:saveCalibration()
+  elseif mode == CalibrationMode.StructuredLightSingleCamera then    
+    auto_calibration:saveCalibration()
+  elseif mode == CalibrationMode.StereoRig then
+    print('TODO')
   end
+  
   prompt:anyKey()
 end
 

@@ -309,8 +309,8 @@ end
 
 local function tryLoadCurrentCameraCalibration(self, camera_serial)
   local current_output_directory = path.join(self.configuration.output_directory, 'current')
-  local calbration_fn = string.format('cam_%s.t7', camera_serial)
-  local calibration_file_path = path.join(current_output_directory, calbration_fn)
+  local calibration_fn = string.format('cam_%s.t7', camera_serial)
+  local calibration_file_path = path.join(current_output_directory, calibration_fn)
 
   printf("Probing for calibration file '%s'.", calibration_file_path)
   if path.exists(calibration_file_path) then
@@ -507,29 +507,18 @@ local function extractPoints(image_paths, pattern_localizer, pattern_id)
 end
 
 
---[[
 function AutoCalibration:monoStructuredLightCalibration()
-  -- initialize structured light scanner
-  local checkerboard_geometry = torch.FloatTensor({7, 11, 10})
-
-  --code = slstudio:initCalibration(14, internal:float(), distort:float(), checker:float(), slstudio.CAMERA_ROS, 'CAMAU1639042', '', '/tmp/slstudio/')
-  code = slstudio:initCalibration(10, nil, nil, checker:float(), slstudio.CAMERA_ROS, "CAMAU1710001", "/tmp/sls", "/tmp/newFrames/")
-
-
-  slstudio:snapAndVerify()
-
-  -- generate calibartion calibratio
-  local calib_errors = torch.FloatTensor({0, 0, 0})
-  slstudio:calibrate(calib_errors)
-  print("CALIB ERRORS:")
-  print(calib_errors)
-
-  -- save calibration and deinit
-  slstudio:save("/tmp/calibration.xml")
-  slstudio:close()
+  -- calibrate structured light system
+  local calibration_errors = torch.FloatTensor({0, 0, 0})
+  slstudio:calibrate(calibration_errors)
+  print("Calibration erros:")
+  print(calibration_errors)
+  self.calibration_errors = calibration_errors
+  return true
 end
 
 
+--[[
 function AutoCalibration:stereoCalibration()
 
 end
@@ -620,6 +609,69 @@ function AutoCalibration:monoCalibration(calibrationFlags)
   }
 
   return true
+end
+
+
+function AutoCalibration:saveCalibration()
+  local configuration = self.configuration
+  local mode = configuration.calibration_mode
+
+  -- generate output directory path
+  local calibration_name = os.date(configuration.calibration_name_template)
+  local output_directory = path.join(configuration.output_directory, calibration_name)
+  local current_output_directory = path.join(configuration.output_directory, 'current')
+  os.execute('mkdir -p ' .. output_directory)
+  os.execute('mkdir -p ' .. current_output_directory)
+
+  if mode == CalibrationMode.SingleCamera then
+
+    if self.calibration == nil then
+      print('No calibration to save available.')
+      return false
+    end
+
+    local left_camera = self.configuration.cameras[configuration.left_camera_id]
+    local camera_serial = left_camera.serial
+
+    local calibration_fn = string.format('cam_%s.t7', camera_serial)
+    local calibration_file_path = path.join(output_directory, calibration_fn)
+    torch.save(calibration_file_path, self.calibration)
+    print('Single camera calibration saved to: ' .. calibration_file_path)
+
+    -- also linking calibration in current directory
+    local current_output_path = path.join(current_output_directory, calibration_fn)
+    os.execute('rm ' .. current_output_path)
+    local link_target = path.join('..', calibration_name, calibration_fn)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+
+    return true
+
+  elseif mode == CalibrationMode.StructuredLightSingleCamera then
+
+    if self.calibration_errors == nil then
+      print('No calibration available.')
+      return false
+    end
+
+    local calibration_fn = 'sls.xml'
+    local calibration_file_path = path.join(output_directory, calibration_fn)
+    slstudio:save(calibration_file_path)
+    print('Structured light calibration saved to: ' .. calibration_file_path)
+
+    local current_output_path = path.join(current_output_directory, calibration_fn)
+    os.execute('rm ' .. current_output_path)
+    local link_target = path.join('..', calibration_name, calibration_fn)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+
+    return true
+      
+  elseif mode == CalibrationMode.StereoRig then
+    print('TODO')
+  end
+
+  return false
 end
 
 --[[
