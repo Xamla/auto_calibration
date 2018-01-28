@@ -2,7 +2,7 @@
 --[[
 
   Configuration script for the
-  Xamla Auto Camera Calibration 
+  Xamla Auto Camera Calibration
 
   Copyright 2018 Andreas Koepf, Xamla/PROVISIO GmbH
   All rights reserved.
@@ -98,7 +98,7 @@ local function calibrateCamera(wait)
     end
 
   elseif mode == CalibrationMode.StructuredLightSingleCamera then
-
+    print("-- START CALIB")
     auto_calibration:monoStructuredLightCalibration()
 
   end
@@ -117,7 +117,7 @@ local function runFullCycle(wait)
       return
     end
   end
-  
+
   pickCalibrationTarget(false)
   runCaptureSequence(false)
   returnCalibrationTarget(false)
@@ -129,12 +129,12 @@ local function saveCalibration()
   local mode = configuration.calibration_mode
   if mode == CalibrationMode.SingleCamera then
     auto_calibration:saveCalibration()
-  elseif mode == CalibrationMode.StructuredLightSingleCamera then    
+  elseif mode == CalibrationMode.StructuredLightSingleCamera then
     auto_calibration:saveCalibration()
   elseif mode == CalibrationMode.StereoRig then
     print('TODO')
   end
-  
+
   prompt:anyKey()
 end
 
@@ -216,7 +216,7 @@ local function validateConfiguration()
     printf("Unsupported configuration mode '%s'.", mode)
     return false
   end
-  
+
   return true
 end
 
@@ -241,7 +241,7 @@ local function main(nh)
     return
   end
 
-  local move_group = motion_service:getMoveGroup(configuration.move_group_name)  
+  local move_group = motion_service:getMoveGroup(configuration.move_group_name)
   move_group:setVelocityScaling(configuration.velocity_scaling)
   printf('Set velocity scaling: %f', configuration.velocity_scaling)
 

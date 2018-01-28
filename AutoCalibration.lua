@@ -77,7 +77,7 @@ function AutoCalibration:shutdown()
   self.node_handle:shutdown()
 
   if slstudio ~= nil then
-    slstudio:close()
+    slstudio:closeCalibration()
   end
 end
 
@@ -669,7 +669,7 @@ function AutoCalibration:saveCalibration()
     printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 
     return true
-      
+
   elseif mode == CalibrationMode.StereoRig then
     print('TODO')
   end

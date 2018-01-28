@@ -491,7 +491,7 @@ local function addCameraConfiguration()
   else
     print('No camera available.')
   end
-  
+
   prompt:anyKey()
 end
 
@@ -581,7 +581,7 @@ end
 local function editCameraSetup()
 
   local generateMenuOptions = function()
-    local menu_options = 
+    local menu_options =
     {
       { 'a', 'Add camera configuration', addCameraConfiguration },
       { 'l', string.format("Select left camera ('%s') (used for single cam/SL calibration)", configuration.left_camera_id), function() selectCamera('left_camera_id') end },
@@ -635,7 +635,7 @@ local function main(nh)
   -- query camera serial numbers
   ximea_serials = {}
   ximea_serials = queryXimeaSerials(nh)
-  if #ximea_serials > 0 and #configuration.cameras == 0 then
+  if #ximea_serials > 0 and #table.keys(configuration.cameras) == 0 then
     -- create default configuration left
     configuration.cameras[DEFAULT_CAMERA_ID] = createCameraConfiguration(DEFAULT_CAMERA_ID, ximea_serials[1])
     configuration.left_camera_id = DEFAULT_CAMERA_ID
