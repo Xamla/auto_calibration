@@ -673,12 +673,12 @@ local function init()
   cmd:text()
   cmd:text('Xamla AutoCalibration configuration script.')
   cmd:text()
-  cmd:option('-edit', '', 'configuration input filename')
+  cmd:option('-cfg', '', 'configuration input filename')
 
   local opt = cmd:parse(arg)
 
-  if #opt.edit > 0 then
-    filename = opt.edit
+  if #opt.cfg > 0 then
+    filename = opt.cfg
     configuration = torch.load(filename)
   end
 

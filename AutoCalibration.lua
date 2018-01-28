@@ -67,10 +67,13 @@ end
 
 
 function AutoCalibration:shutdown()
-  self.gripper_status_client:shutdown()
-  self.ack_error_client:shutdown()
-  self.set_force_client:shutdown()
-  self.gripper_action_server:shutdown()
+  if self.gripper_status_client ~= nil then
+    self.gripper_status_client:shutdown()
+    self.ack_error_client:shutdown()
+    self.set_force_client:shutdown()
+    self.gripper_action_server:shutdown()
+  end
+
   self.node_handle:shutdown()
 
   if slstudio ~= nil then
