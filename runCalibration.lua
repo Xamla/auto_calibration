@@ -18,6 +18,8 @@ local motionLibrary = require 'xamlamoveit.motionLibrary'
 local xutils = require 'xamlamoveit.xutils'
 local grippers = require 'xamlamoveit.grippers'
 local autoCalibration = require 'autoCalibration_env'
+local CalibrationMode = autoCalibration.CalibrationMode
+local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
 require 'ximea.ros.XimeaClient'
 require 'AutoCalibration'
 
@@ -118,23 +120,35 @@ local function saveCalibration()
   if auto_calibration.calibration == nil then
     print('No calibration available to save.')
   else
-    -- generate output directory path
-    local calibration_name = os.date(configuration.calibration_name_template)
-    local output_directory = path.join(configuration.output_directory, calibration_name)
-    os.execute('mkdir -p ' .. output_directory)
-    local calbration_fn = string.format('cam_%s.t7', configuration.camera_serial)
-    local calibration_file_path = path.join(output_directory, calbration_fn)
-    torch.save(calibration_file_path, auto_calibration.calibration)
-    print('Calibration saved to: ' .. calibration_file_path)
 
-    -- also linking calibration in current directory
-    local current_output_directory = path.join(configuration.output_directory, 'current')
-    local current_output_path = path.join(current_output_directory, calbration_fn)
-    os.execute('mkdir -p ' .. current_output_directory)
-    os.execute('rm ' .. current_output_path)
-    local link_target = path.join('..', calibration_name, calbration_fn)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+    local mode = configuration.calibration_mode
+    if mode == CalibrationMode.SingleCamera then
+
+      local left_camera = self.configuration.cameras[configuration.left_camera_id]
+      local camera_serial = left_camera.serial
+
+      -- generate output directory path
+      local calibration_name = os.date(configuration.calibration_name_template)
+      local output_directory = path.join(configuration.output_directory, calibration_name)
+      os.execute('mkdir -p ' .. output_directory)
+      local calbration_fn = string.format('cam_%s.t7', camera_serial)
+      local calibration_file_path = path.join(output_directory, calbration_fn)
+      torch.save(calibration_file_path, auto_calibration.calibration)
+      print('Calibration saved to: ' .. calibration_file_path)
+
+      -- also linking calibration in current directory
+      local current_output_directory = path.join(configuration.output_directory, 'current')
+      local current_output_path = path.join(current_output_directory, calbration_fn)
+      os.execute('mkdir -p ' .. current_output_directory)
+      os.execute('rm ' .. current_output_path)
+      local link_target = path.join('..', calibration_name, calbration_fn)
+      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+      printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+    elseif mode == CalibrationMode.StructuredLightSingleCamera then
+      print('TODO')
+    elseif mode == CalibrationMode.StereoRig then
+      print('TODO')
+    end
   end
   prompt:anyKey()
 end
@@ -157,6 +171,71 @@ local function showMainMenu()
 end
 
 
+local function checkKeys(t, key_list)
+  if t == nil or type(t) ~= 'table' then
+    return false
+  end
+
+  for i,k in ipairs(key_list) do
+    if t[k] == nil then
+      return false
+    end
+  end
+  return true
+end
+
+
+local function validateConfiguration()
+
+  if configuration.move_group_name == nil or #configuration.move_group_name == 0 then
+    print('No move-group was specified in configuration.')
+    return false
+  end
+
+  if not checkKeys(configuration.base_poses, BASE_POSE_NAMES) then
+    print("Base poses missing.")
+    return false
+  end
+
+  if configuration.capture_poses == nil or #configuration.capture_poses == 0 then
+    print("No capture poses were defined.")
+    return false
+  end
+
+  local cameras = configuration.cameras
+  if cameras == nil or #table.keys(cameras) == 0 then
+    print("No camera configuration was defined.")
+    return false
+  end
+
+  local mode = configuration.calibration_mode
+  if mode == CalibrationMode.SingleCamera or mode == CalibrationMode.StructuredLightSingleCamera then
+
+    local camera_configuration = cameras[configuration.left_camera_id]
+    if camera_configuration == nil then
+      print("No camera was selected.")
+      return false
+    end
+
+    if camera_configuration.serial == nil or #camera_configuration.serial == 0 then
+      printf("Invalid camera serial number '%s'.", camera_configuration.serial)
+      return false
+    end
+
+  elseif mode == CalibrationMode.StereoRig then
+
+    print('Stereo calibration not yet supported')
+    return false
+
+  else
+    printf("Unsupported configuration mode '%s'.", mode)
+    return false
+  end
+  
+  return true
+end
+
+
 local function main(nh)
   -- parse command line
   local cmd = torch.CmdLine()
@@ -172,18 +251,8 @@ local function main(nh)
 
   configuration = torch.load(filename)
 
-  if configuration.camera_serial == nil or #configuration.camera_serial == 0 then
-    print("No camera specified. Use 'configureCalibration' script first.")
-    return
-  end
-
-  if configuration.base_poses == nil or #table.keys(configuration.base_poses) == 0 then
-    print("Base poses missing. Use 'configureCalibration' script first.")
-    return
-  end
-
-  if configuration.capture_poses == nil or #configuration.capture_poses == 0 then
-    print("No capture poses defined. Use 'configureCalibration' script first.")
+  if not validateConfiguration() then
+    print("Configuration not valid. Use the 'configureCalibration' script to create a valid configuration.")
     return
   end
 

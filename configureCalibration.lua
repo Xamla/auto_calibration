@@ -21,6 +21,8 @@ local xutils = require 'xamlamoveit.xutils'
 local grippers = require 'xamlamoveit.grippers'
 local autoCalibration = require 'autoCalibration_env'
 local CalibrationMode = autoCalibration.CalibrationMode
+local CalibrationFlags = autoCalibration.CalibrationFlags
+local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
 require 'ximea.ros.XimeaClient'
 require 'AutoCalibration'
 
@@ -53,8 +55,8 @@ end
 
 
 local configuration = {
+  calibration_mode = CalibrationMode.SingleCamera,
   move_group_name = nil,
-  calibration_mode = CalibrationMode.Mono,
   cameras = {},
   left_camera_id = nil,
   right_camera_id = nil,
@@ -375,13 +377,7 @@ end
 
 local function teachBasePoses()
   prompt:printTitle('Teach Base Poses')
-  local base_poses = teachNamedPositions({
-    'start',
-    'pre_pick_marker',
-    'pick_marker',
-    'post_pick_marker',
-    'camera1_base'
-  })
+  local base_poses = teachNamedPositions(BASE_POSE_NAMES)
   if base_poses ~= nil then
     configuration.base_poses = base_poses
     print('New base poses defined.')
@@ -450,9 +446,9 @@ end
 local function selectCalibrationMode()
   local menu_options =
   {
-    { '1', 'Mono camera calibration', function() setCalibrationMode(CalibrationMode.Mono) end },
-    { '2', 'Stereo camera calibraiton', function() setCalibrationMode(CalibrationMode.Stereo) end },
-    { '3', 'Mono structured light calibration', function() setCalibrationMode(CalibrationMode.CalibrationMode.StructuredLightMono) end },
+    { '1', 'Single camera calibration', function() setCalibrationMode(CalibrationMode.SingleCamera) return false end },
+    { '2', 'Stereo rig calibraiton', function() setCalibrationMode(CalibrationMode.StereoRig) return false end },
+    { '3', 'Structured light single camera calibration', function() setCalibrationMode(CalibrationMode.StructuredLightSingleCamera) return false end },
     { 'ESC', 'Return to main menu', false },
   }
   prompt:showMenu('Main Menu', menu_options)
@@ -473,19 +469,41 @@ end
 
 
 local function addCameraConfiguration()
-  local default_id = DEFAULT_CAMERA_ID
   prompt:printTitle('Add Camera')
-  printf("Enter ID of camera configuration (default '%s'):", default_id)
-  local id = prompt:readLine()
-  if id == nil or #id == 0 then
-    id = default_id
+  local default_id = 'right'
+  if ximea_serials ~= nil and #ximea_serials > 0 then
+    printf("Enter ID of new camera configuration (default '%s'):", default_id)
+    local id = prompt:readLine()
+    if id == nil or #id == 0 then
+      id = default_id
+    end
+
+    local serial = prompt:chooseFromList(ximea_serials, 'Choose camera S/N:')
+    if serial ~= nil then
+      local camera_configuration = createCameraConfiguration(id, serial)
+      configuration.cameras[id] = camera_configuration
+
+      print('Added new camera configuration:')
+      print(camera_configuration)
+    end
+
+  else
+    print('No camera available.')
   end
-  local existing_ids = getCameraIds()
+  
+  prompt:anyKey()
 end
 
 
 local function deleteCameraConfiguration(id)
-  configuration.cameras
+  configuration.cameras[id] = nil
+  if configuration.left_camera_id == id then
+    configuration.left_camera_id = nil
+  end
+  if configuration.right_camera_id == id then
+    configuration.right_camera_id = nil
+  end
+  return false
 end
 
 
@@ -509,14 +527,15 @@ local function selectCameraSerial()
 end
 
 
-local function setCameraExposure(serial)
+local function setCameraExposure(id)
+  local camera_configuration = configuration.cameras[id]
   prompt:printTitle('Set Camera Exposure')
-  printf('Current exposure value: %f ms', configuration.exposure / 1000.0)
+  printf('Current exposure value: %f ms', camera_configuration.exposure / 1000.0)
   print('Enter exposure duration (in ms):')
   local value = prompt:readNumber()
   if value ~= nil and value > 0 and value == value then -- last is check for NaN
-    configuration.exposure = math.floor(value * 1000.0)
-    printf('New exposure value: %f ms', configuration.exposure * 1000)
+    camera_configuration.exposure = math.floor(value * 1000.0)
+    printf('New exposure value: %f ms', camera_configuration.exposure / 1000.0)
   else
     print('Invalid exposure value. Nothing changed.')
   end
@@ -524,14 +543,17 @@ local function setCameraExposure(serial)
 end
 
 
-local function editCamera(serial)
-  local menu_options =
-  {
-    { '1', 'Edit camera exposure duration', function() return setCameraExposure(serial) end },
-    { '2', 'Delete camera configuration', function() return deleteCameraConfiguration(serial) end },
-    { 'ESC', 'Return to camera menu', false }
-  }
-  prompt:showMenu(string.format("Camera Configuration '%s'", serial), menu_options)
+local function editCamera(id)
+  local camera_configuration = configuration.cameras[id]
+  print(camera_configuration)
+  local generateMenuOptions = function()
+    return {
+      { '1', string.format('Edit camera exposure duration (%f ms)', camera_configuration.exposure / 1000.0), function() return setCameraExposure(id) end },
+      { '2', 'Delete camera configuration', function() return deleteCameraConfiguration(id) end },
+      { 'ESC', 'Return to camera menu', false }
+    }
+  end
+  prompt:showMenu(string.format("Camera Configuration '%s'", id), generateMenuOptions)
 end
 
 
@@ -560,10 +582,15 @@ local function editCameraSetup()
   local generateMenuOptions = function()
     local menu_options = 
     {
-      { '1', 'Add camera configuration', addCameraConfiguration },
-      { '2', string.format("Select left camera ('%s') (used for single cam/SL calibration)", configuration.right_camera_id), function() selectCamera('left_camera_id') end },
-      { '3', string.format("Select right camera ('%s')", configuration.right_camera_id), function() selectCamera('right_camera_id') end   }
+      { 'a', 'Add camera configuration', addCameraConfiguration },
+      { 'l', string.format("Select left camera ('%s') (used for single cam/SL calibration)", configuration.left_camera_id), function() selectCamera('left_camera_id') end },
+      { 'r', string.format("Select right camera ('%s')", configuration.right_camera_id), function() selectCamera('right_camera_id') end }
     }
+    local i = 1
+    for k,v in pairs(configuration.cameras) do
+      menu_options[#menu_options + 1] = { tostring(i), string.format("Edit camera configuration '%s'", k), function() editCamera(k) end }
+      i = i + 1
+    end
     menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
     return menu_options
   end
@@ -578,7 +605,7 @@ local function showMainMenu()
     return {
       { '1', string.format('Set calibration mode (%s)', configuration.calibration_mode), selectCalibrationMode },
       { '2', string.format("Select move-group ('%s')", configuration.move_group_name), selectMoveGroup },
-      { '3', string.format('Edit camera setup (%d configured)', #configuration.cameras), editCameraSetup },
+      { '3', string.format('Edit camera setup (%d configured)', #table.keys(configuration.cameras)), editCameraSetup },
       { '4', string.format('Set circle pattern ID (%d)', configuration.circle_pattern_id), setPatternId },
       { '5', 'Teach base poses',  teachBasePoses },
       { '6', string.format('Teach capture poses (%d defined)', #configuration.capture_poses), teachCapturePoses },

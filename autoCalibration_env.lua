@@ -1,10 +1,19 @@
 local autoCalibration = {}
 
+local BASE_POSE_NAMES = {
+  'start',
+  'pre_pick_marker',
+  'pick_marker',
+  'post_pick_marker',
+  'camera1_base'
+}
+autoCalibration.BASE_POSE_NAMES = BASE_POSE_NAMES
+
 
 local CalibrationMode = {
-  Mono = 'Mono',
-  Stereo = 'Stereo',
-  StructuredLightMono = 'StructuredLightMono',
+  SingleCamera = 'SingleCamera',
+  StereoRig = 'StereoRig',
+  StructuredLightSingleCamera = 'StructuredLightSingleCamera',
 }
 autoCalibration.CalibrationMode = CalibrationMode
 
@@ -75,6 +84,7 @@ local CalibrationFlags = {
   OnlyK1Distortion = ONLY_K1_DISTORTION_CALIBRATION_FLAGS,
   Full = FULL_CALIBRATION_FLAGS
 }
+autoCalibration.CalibrationFlags = CalibrationFlags
 
 
 return autoCalibration

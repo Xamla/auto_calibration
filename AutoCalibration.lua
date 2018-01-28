@@ -3,8 +3,8 @@ local actionlib = ros.actionlib
 local SimpleClientGoalState = actionlib.SimpleClientGoalState
 local xutils = require 'xamlamoveit.xutils'
 local autoCalibration = require 'autoCalibration_env'
-local CalibrationFlags = autoCalibration.CalibrationFlags
 local CalibrationMode = autoCalibration.CalibrationMode
+local CalibrationFlags = autoCalibration.CalibrationFlags
 
 local cv = require 'cv'
 require 'cv.imgproc'
@@ -14,6 +14,13 @@ require 'cv.calib3d'
 
 require 'ximea.ros.XimeaClient'
 require 'multiPattern.PatternLocalisation'
+
+
+local function tryRequire(module_name)
+  return pcall(function() return require(module_name) end)
+end
+
+local slstudio = tryRequire('slstudio')
 
 
 local GraspingState = {
@@ -27,13 +34,16 @@ local GraspingState = {
 local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalibration)
 
 
+local GRIPPER_NS = '/xamla/wsg50_driver/wsg50'
+
+
 local function initializeGripperServices(self)
   local node_handle = ros.NodeHandle()
   self.node_handle = node_handle
-  self.gripper_status_client = node_handle:serviceClient('/wsg_50_driver/get_gripper_status', 'wsg_50_common/GetGripperStatus')
-  self.ack_error_client = node_handle:serviceClient('/wsg_50_driver/acknowledge_error', 'std_srvs/Empty')
-  self.set_force_client = node_handle:serviceClient('/wsg_50_driver/set_force', 'wsg_50_common/Conf')
-  self.gripper_action_server = actionlib.SimpleActionClient('wsg_50_common/Command', '/wsg_50_driver/gripper/command', self.node_handle)
+  self.gripper_status_client = node_handle:serviceClient(GRIPPER_NS .. '/get_gripper_status', 'wsg_50_common/GetGripperStatus')
+  self.ack_error_client = node_handle:serviceClient(GRIPPER_NS .. '/acknowledge_error', 'std_srvs/Empty')
+  self.set_force_client = node_handle:serviceClient(GRIPPER_NS .. '/set_force', 'wsg_50_common/Conf')
+  self.gripper_action_server = actionlib.SimpleActionClient('wsg_50_common/Command', GRIPPER_NS .. '/gripper_control/', self.node_handle)
 end
 
 
@@ -56,6 +66,10 @@ function AutoCalibration:shutdown()
   self.set_force_client:shutdown()
   self.gripper_action_server:shutdown()
   self.node_handle:shutdown()
+
+  if slstudio ~= nil then
+    slstudio:close()
+  end
 end
 
 
@@ -252,12 +266,62 @@ function AutoCalibration:homeGripper()
 end
 
 
+local function captureImage(self, i, camera_configuration, output_directory)
+
+  local camera_serial = camera_configuration.serial
+  local exposure = camera_configuration.exposure
+  local sleep_before_capture = camera_configuration.sleep_before_capture
+
+  -- wait configured time before capture
+  if sleep_before_capture > 0 then
+    printf('wait before capture %f s... ', sleep_before_capture)
+    sys.sleep(sleep_before_capture)
+  end
+
+  -- capture image
+  self.ximea_client:setExposure(exposure, {camera_serial})
+  local image = self.ximea_client:getImages({camera_serial})
+
+  -- get joint values and pose of image
+  local joint_values = self.move_group:getCurrentJointValues()
+  local pose = self.move_group:getCurrentPose()
+
+  -- create output filename
+  local fn = path.join(output_directory, string.format('cam_%s_%03d.png', camera_serial, i))
+  if image:nDimension() > 2 then
+    image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
+  end
+
+  -- write image to disk
+  printf("Writing image: %s", fn)
+  local ok = cv.imwrite{fn, image}
+  assert(ok, 'Could not write image.')
+
+  return fn, joint_values, pose
+end
+
+
+local function tryLoadCurrentCameraCalibration(self, camera_serial)
+  local current_output_directory = path.join(configuration.output_directory, 'current')
+  local calbration_fn = string.format('cam_%s.t7', camera_serial)
+  local calibration_file_path = path.join(current_output_directory, calbration_fn)
+
+  printf("Probing for calibration file '%s'.", calibration_file_path)
+  if path.exists(calibration_file_path) then
+    return torch.load(calibration_file_path)
+  else
+    return nil
+  end
+end
+
+
 function AutoCalibration:runCaptureSequence()
+  local configuration = self.configuration
   local file_names = {}
   local recorded_joint_values = {}   -- measured after getImage call
   local recorded_poses = {}          -- poses of all joints after getImage call
 
-  local output_directory = path.join(self.configuration.output_directory, 'capture')
+  local output_directory = path.join(configuration.output_directory, 'capture')
 
   print('Deleting output directory')
   os.execute('rm -r '.. output_directory)
@@ -265,44 +329,78 @@ function AutoCalibration:runCaptureSequence()
   print('Creating output directory')
   os.execute('mkdir -p ' .. output_directory)
 
-  local camera_serial = self.configuration.camera_serial
-  local exposure = self.configuration.exposure
-  local sleep_before_capture = self.configuration.sleep_before_capture
-
-  local pos_list = self.configuration.capture_poses
+  local pos_list = configuration.capture_poses
   assert(pos_list ~= nil and #pos_list > 0)
 
+  local left_camera = configuration.cameras[configuration.left_camera_id]
+  local right_camera = configuration.cameras[configuration.right_camera_id]
+
+
+  if mode == CalibrationMode.StructuredLightSingleCamera then
+    assert(slstudio ~= nil, 'Structured light scanning module could not be loadad.')
+    assert(left_camera ~= nil, "Left camera for SL scanning not correctly configured.")
+
+    local intrinsics
+    local distortion
+
+    -- try to get camera parameters from current configuration
+    local camera_calibration = tryLoadCurrentCameraCalibration(self, left_camera.serial)
+    if camera_calibration ~= nil then
+      print('Using existing camera calibration')
+      intrinsics = camera_calibration.camMatrix:float()
+      distortion = camera_calibration.distCoeffs:float()
+      print('Camera matrix:')
+      print(intrinsics)
+      print('Distortion coefficients:')
+      print(distortion)
+    else
+      printf("No existing camera calibration found for camera '%s'.", left_camera.serial)
+    end
+
+    local result = slstudio:initCalibration(
+      left_camera.exposure,
+      intrinsics,
+      distortion,
+      configuration.checkerboard_pattern_geometry:float(), 
+      slstudio.CAMERA_ROS,
+      left_camera.serial,
+      path.join(output_directory, 'sls'),
+      path.join(output_directory, 'newFrames')
+    )
+
+    printf('Structured light initializaiton returned: %d', result)
+  end
+
   for i,p in ipairs(pos_list) do
+
     printf('Moving to position #%d...', i)
 
     -- move to capture pose
     moveJ(self, p)
 
-    -- wait configured time before capture
-    if sleep_before_capture > 0 then
-      sys.sleep(sleep_before_capture)
+    local mode = configuration.calibration_mode
+    if mode == CalibrationMode.SingleCamera or mode == CalibrationMode.StereoRig then
+
+      if left_camera ~= nil then
+        local fn, joint_values, pose = captureImage(self, i, left_camera, output_directory)
+        file_names[#file_names+1] = fn
+        recorded_joint_values[#recorded_joint_values+1] = joint_values
+        recorded_poses[#recorded_poses+1] = pose:toTensor()
+      end
+
+      if right_camera ~= nil then
+        local fn, joint_values, pose = captureImage(self, i, right_camera, output_directory)
+        file_names[#file_names+1] = fn
+        recorded_joint_values[#recorded_joint_values+1] = joint_values
+        recorded_poses[#recorded_poses+1] = pose:toTensor()
+      end
+
+    elseif mode == CalibrationMode.StructuredLightSingleCamera then
+
+      local result = slstudio:snapAndVerify()
+      print("RESULT: " .. result)
+
     end
-
-    -- capture image
-    self.ximea_client:setExposure(exposure, {camera_serial})
-    local image = self.ximea_client:getImages({camera_serial})
-
-    -- get joint values and pose of image
-    recorded_joint_values[#recorded_joint_values+1] = self.move_group:getCurrentJointValues()
-    recorded_poses[#recorded_poses+1] = self.move_group:getCurrentPose():toTensor()
-
-    -- create output filename
-    local fn = path.join(output_directory, string.format('cam_%s_%03d.png', camera_serial, i))
-    if image:nDimension() > 2 then
-      image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
-    end
-
-    -- write image to disk
-    printf("Writing image: %s", fn)
-    local ok = cv.imwrite{fn, image}
-    assert(ok, 'Could not write image.')
-
-    file_names[#file_names+1] = fn
 
     collectgarbage()
   end
@@ -403,14 +501,13 @@ local function extractPoints(image_paths, pattern_localizer, pattern_id)
 end
 
 
+--[[
 function AutoCalibration:monoStructuredLightCalibration()
   -- initialize structured light scanner
   local checkerboard_geometry = torch.FloatTensor({7, 11, 10})
 
   --code = slstudio:initCalibration(14, internal:float(), distort:float(), checker:float(), slstudio.CAMERA_ROS, 'CAMAU1639042', '', '/tmp/slstudio/')
   code = slstudio:initCalibration(10, nil, nil, checker:float(), slstudio.CAMERA_ROS, "CAMAU1710001", "/tmp/sls", "/tmp/newFrames/")
-
-
 
 
   slstudio:snapAndVerify()
@@ -430,6 +527,7 @@ end
 function AutoCalibration:stereoCalibration()
 
 end
+]]
 
 
 function AutoCalibration:monoCalibration(calibrationFlags)
