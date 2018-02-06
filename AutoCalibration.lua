@@ -48,7 +48,7 @@ local function initializeGripperServices(self)
   self.node_handle = node_handle
   self.gripper_status_client = node_handle:serviceClient(GRIPPER_NS .. '/get_gripper_status', 'wsg_50_common/GetGripperStatus')
   self.ack_error_client = node_handle:serviceClient(GRIPPER_NS .. '/acknowledge_error', 'std_srvs/Empty')
-  self.set_force_client = node_handle:serviceClient(GRIPPER_NS .. '/set_force', 'wsg_50_common/Conf')
+  self.set_force_client = node_handle:serviceClient(GRIPPER_NS .. '/set_force', 'wsg_50_common/SetValue')
   self.gripper_action_server = actionlib.SimpleActionClient('wsg_50_common/Command', GRIPPER_NS .. '/gripper_control/', self.node_handle)
 end
 
