@@ -243,11 +243,14 @@ end
 
 
 function AutoCalibration:ackGripper()
-  print('ACK gripper')
   if self.ack_error_client:exists() then
     local req = self.ack_error_client:createRequest()
     local r = self.ack_error_client:call(req)
-    print(r)
+    if r == nil then
+        ros.ERROR("Could not contact error acknowledge service")
+    else
+        ros.INFO("Acknowledged error of gripper")
+    end
   else
     ros.ERROR("Could not contact error acknowledge service")
   end
@@ -264,7 +267,7 @@ function AutoCalibration:homeGripper()
     local state = self.gripper_action_server:sendGoalAndWait(g, 5, 5)
     local result = self.gripper_action_server:getResult()
 
-    if state == 7 and result.return_code == 0 then
+    if state == 7 and result.status.return_code == 0 then
       ros.INFO("Homed gripper successfully")
     else
       ros.ERROR("Could not home gripper")
