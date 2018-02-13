@@ -98,7 +98,6 @@ end
 local function moveJ(self, pos)
   assert(pos ~= nil, 'Target position is nil.')
   self.move_group:moveJ(pos)
-  sys.sleep(1.0)
 end
 
 
