@@ -213,7 +213,8 @@ function AutoCalibration:closeGripper()
       g.command.command_id = 102
       g.command.speed = 0.1
       g.command.width = 0.01
-
+      g.command.force = 50
+	  
       local state = self.gripper_action_server:sendGoalAndWait(g, 5, 5)
       local result = self.gripper_action_server:getResult()
 
