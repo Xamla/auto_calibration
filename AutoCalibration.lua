@@ -40,7 +40,7 @@ local GraspingState = {
 local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalibration)
 
 
-local GRIPPER_NS = '/xamla/wsg50_driver/wsg50'
+local GRIPPER_NS = '/xamla/wsg_driver/wsg50'
 
 
 local function initializeGripperServices(self)
@@ -174,8 +174,8 @@ function AutoCalibration:openGripper()
         return
       end
 
-      g.command.speed = 200
-      g.command.width = 50
+      g.command.speed = 0.2
+      g.command.width = 0.05
 
       local state = self.gripper_action_server:sendGoalAndWait(g, 5, 5)
       local result = self.gripper_action_server:getResult()
@@ -211,8 +211,8 @@ function AutoCalibration:closeGripper()
     if self.gripper_action_server:waitForServer(ros.Duration(5.0)) then
       local g = self.gripper_action_server:createGoal()
       g.command.command_id = 102
-      g.command.speed = 100
-      g.command.width = 10
+      g.command.speed = 0.1
+      g.command.width = 0.01
 
       local state = self.gripper_action_server:sendGoalAndWait(g, 5, 5)
       local result = self.gripper_action_server:getResult()
