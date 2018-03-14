@@ -524,11 +524,189 @@ function AutoCalibration:monoStructuredLightCalibration()
 end
 
 
---[[
-function AutoCalibration:stereoCalibration()
+function AutoCalibration:stereoCalibration(calibrationFlags)
 
+  local image_paths = self.file_names
+  local pattern_id = self.configuration.circle_pattern_id
+  local left_camera = self.configuration.cameras[configuration.left_camera_id]
+  local right_camera = self.configuration.cameras[configuration.right_camera_id]
+  local camera_serials = {left_camera.serial, right_camera.serial}
+  calibrationFlags = calibrationFlags or CalibrationFlags.Default
+
+  if image_paths == nil or #image_paths == 0 then
+    local current_directory_path = path.join(self.configuration.output_directory, 'capture')
+    printf("Looking for images in '%s'.", current_directory_path)
+    image_paths = findImages(current_directory_path)
+    if #image_paths == 0 then
+      print('No images found.')
+      return false
+    end
+  end
+
+  createPatternLocalizer(self)
+
+  local flags = 0
+  for k,v in pairs(calibrationFlags) do
+    if v == true then
+      flags = bit.bor(flags, cv[k])
+    end
+  end
+  printf('Using flags (%d):', flags)
+  print(calibrationFlags)
+
+  -- extract point centers
+  local objectPoints = {}
+  local imagePointsLeft
+  local imagePointsRight
+  local width, height
+  table.sort(image_paths)
+  for _, serial in ipairs(camera_serials) do
+    local image_path_single_cam = {}
+    for _, image_path in pairs(image_paths) do
+      if string.match(image_path, serial) then
+        table.insert(image_path_single_cam, image_path)
+      end
+    end
+    printf("Searching calibration target pattern on %d input images for serial %s.", #image_path_single_cam, serial)
+    local imagePoints, w, h = extractPoints(image_path_single_cam, self.pattern_localizer, pattern_id)
+    width = w
+    height = h
+    printf("Found pattern on %d images.", #imagePoints)
+
+    print(imagePoints)
+    local pointImg = torch.ByteTensor(h, w, 1):zero()
+    for i=1, #imagePoints do
+      for j=1, imagePoints[i]:size(1) do
+        pointImg[math.floor(imagePoints[i][j][1][2]+0.5)][math.floor(imagePoints[i][j][1][1]+0.5)]=255
+      end
+    end
+
+    cv.imshow {"Located point centers", pointImg}
+    cv.waitKey {-1}
+
+    -- generate object points and mono calibrate both cameras
+    if serial == left_camera.serial then
+      local groundTruthPointsLeft = generatePatternPoints(self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.pattern_localizer.pattern.pointDist)
+      local objectPointsLeft = {}
+      for i=1,#imagePoints do
+        objectPointsLeft[#objectPointsLeft+1] = groundTruthPointsLeft
+      end
+      objectPoints = objectPointsLeft
+      imagePointsLeft = imagePoints
+
+      -- run calibration of left camera
+      print('Running openCV camera calibration for left camera (serial: %s)...', serial)
+      local reprojError, camMatrix, distCoeffs, rvecs, tvecs =
+        cv.calibrateCamera{
+          objectPoints=objectPointsLeft,
+          imagePoints=imagePointsLeft,
+          imageSize={width, height},
+          flag=flags
+        }
+      print('Left camera calibration results:')
+      printf('Reprojection error: %f', reprojError)
+      print('Left camera matrix:')
+      print(camMatrix)
+      print('Left camera distortion coefficients:')
+      print(distCoeffs)
+      self.leftCameraCalibration = {
+        date = os.date('%Y-%m-%d %H:%M:%S'),
+        patternGeometry = self.pattern_localizer.pattern,
+        reprojError = reprojError,
+        camMatrix = camMatrix,
+        distCoeffs = distCoeffs,
+        imWidth = width,
+        imHeight = height,
+        calibrationFlags = calibrationFlags
+      }
+    else
+      local groundTruthPointsRight = generatePatternPoints(self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.pattern_localizer.pattern.pointDist)
+      local objectPointsRight = {}
+      for i=1,#imagePoints do
+        objectPointsRight[#objectPointsRight+1] = groundTruthPointsRight
+      end
+      imagePointsRight = imagePoints
+
+      -- run calibration of right camera
+      print('Running openCV camera calibration for right camera (serial: %s)...', serial)
+      local reprojError, camMatrix, distCoeffs, rvecs, tvecs =
+        cv.calibrateCamera{
+          objectPoints=objectPointsRight,
+          imagePoints=imagePointsRight,
+          imageSize={width, height},
+          flag=flags
+        }
+      print('Right camera calibration results:')
+      printf('Reprojection error: %f', reprojError)
+      print('Right camera matrix:')
+      print(camMatrix)
+      print('Right camera distortion coefficients:')
+      print(distCoeffs)
+      self.rightCameraCalibration = {
+        date = os.date('%Y-%m-%d %H:%M:%S'),
+        patternGeometry = self.pattern_localizer.pattern,
+        reprojError = reprojError,
+        camMatrix = camMatrix,
+        distCoeffs = distCoeffs,
+        imWidth = width,
+        imHeight = height,
+        calibrationFlags = calibrationFlags
+      }
+    end
+  end
+
+  -- run stereo calibration
+  print("Running openCV stereo camera calibration...")
+  local reprojError, camLeftMatrix, camLeftDistCoeffs, camRightMatrix, camRightDistCoeffs, R, T, E, F =
+    cv.stereoCalibrate {
+      objectPoints=objectPoints,
+      imagePoints1=imagePointsLeft,
+      imagePoints2=imagePointsRight,
+      cameraMatrix1 = self.leftCameraCalibration.camMatrix,
+      distCoeffs1 = self.leftCameraCalibration.distCoeffs,
+      cameraMatrix2 = self.rightCameraCalibration.camMatrix,
+      distCoeffs2 = self.rightCameraCalibration.distCoeffs,
+      imageSize = {width, height},
+      calibrationFlags = calibrationFlags
+    }
+
+  local trafoMatrix = torch.FloatTensor():eye(4)
+  trafoMatrix[{{1, 3}, {1, 3}}] = R[{{1, 3}}]
+  trafoMatrix[{{1, 3}, {4}}] = T[{{1, 3}}]
+
+  print('Stereo calibration results:')
+  printf('Reprojection error: %f', reprojError)
+  print('Left camera matrix:')
+  print(camLeftMatrix)
+  print('Right camera matrix:')
+  print(camRightMatrix)
+  print('Left distortion coefficients:')
+  print(camLeftDistCoeffs)
+  print('Right distortion coefficients:')
+  print(camRightDistCoeffs)
+  print('Transformation of left camera to right camera:')
+  print(trafoMatrix)
+
+  self.stereo_calibration = {
+    date = os.date('%Y-%m-%d %H:%M:%S'),
+    patternGeometry = self.pattern_localizer.pattern,
+    reprojError = reprojError,
+    camLeftMatrix = camLeftMatrix,
+    camLeftDistCoeffs = camLeftDistCoeffs,
+    camRightMatrix = camRightMatrix,
+    camRightDistCoeffs = camRightDistCoeffs,
+    trafoLeftToRightCam = trafoMatrix,
+    R = R,
+    T = T,
+    E = E,
+    F = F,
+    imWidth = width,
+    imHeight = height,
+    calibrationFlags = calibrationFlags
+  }
+
+  return true
 end
-]]
 
 
 function AutoCalibration:monoCalibration(calibrationFlags)
@@ -674,7 +852,31 @@ function AutoCalibration:saveCalibration()
     return true
 
   elseif mode == CalibrationMode.StereoRig then
-    print('TODO')
+
+    if self.stereo_calibration == nil then
+      print('No stereo calibration to save available.')
+      return false
+    end
+
+    local left_camera = self.configuration.cameras[configuration.left_camera_id]
+    local right_camera = self.configuration.cameras[configuration.right_camera_id]
+    local left_camera_serial = left_camera.serial
+    local right_camera_serial = right_camera.serial
+
+    local calibration_fn = string.format('stereo_cams_%s_%s.t7', left_camera_serial, right_camera_serial)
+    local calibration_file_path = path.join(output_directory, calibration_fn)
+    torch.save(calibration_file_path, self.stereo_calibration)
+    print('Stereo camera calibration saved to: ' .. calibration_file_path)
+
+    -- also linking stereo calibration in current directory
+    local current_output_path = path.join(current_output_directory, calibration_fn)
+    os.execute('rm ' .. current_output_path)
+    local link_target = path.join('..', calibration_name, calibration_fn)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+
+    return true
+
   end
 
   return false

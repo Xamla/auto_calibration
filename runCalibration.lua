@@ -87,14 +87,23 @@ end
 
 local function calibrateCamera(wait)
   local mode = configuration.calibration_mode
-  if mode == CalibrationMode.SingleCamera then
 
+  if mode == CalibrationMode.SingleCamera then
     local ok = auto_calibration:monoCalibration()
     if ok then
       print('Calibration result:')
       print(auto_calibration.calibration)
     else
       print('Calibration failed.')
+    end
+
+  elseif mode == CalibrationMode.StereoRig then
+    local ok = auto_calibration:stereoCalibration()
+    if ok then
+      print('Stereo calibration result:')
+      print(auto_calibration.stereo_calibration)
+    else
+      print('Stereo calibration failed.')
     end
 
   elseif mode == CalibrationMode.StructuredLightSingleCamera then
@@ -126,15 +135,7 @@ end
 
 
 local function saveCalibration()
-  local mode = configuration.calibration_mode
-  if mode == CalibrationMode.SingleCamera then
-    auto_calibration:saveCalibration()
-  elseif mode == CalibrationMode.StructuredLightSingleCamera then
-    auto_calibration:saveCalibration()
-  elseif mode == CalibrationMode.StereoRig then
-    print('TODO')
-  end
-
+  auto_calibration:saveCalibration()
   prompt:anyKey()
 end
 
@@ -209,8 +210,25 @@ local function validateConfiguration()
 
   elseif mode == CalibrationMode.StereoRig then
 
-    print('Stereo calibration not yet supported')
-    return false
+    local left_camera_configuration = cameras[configuration.left_camera_id]
+    local right_camera_configuration = cameras[configuration.left_camera_id]
+    if left_camera_configuration == nil then
+      print("No left camera was selected.")
+      return false
+    end
+    if right_camera_configuration == nil then
+      print("No right camera was selected.")
+      return false
+    end
+
+    if left_camera_configuration.serial == nil or #left_camera_configuration.serial == 0 then
+      printf("Invalid left camera serial number '%s'.", left_camera_configuration.serial)
+      return false
+    end
+    if right_camera_configuration.serial == nil or #right_camera_configuration.serial == 0 then
+      printf("Invalid right camera serial number '%s'.", right_camera_configuration.serial)
+      return false
+    end
 
   else
     printf("Unsupported configuration mode '%s'.", mode)
