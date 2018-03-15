@@ -15,6 +15,10 @@ require 'cv.calib3d'
 require 'ximea.ros.XimeaClient'
 require 'multiPattern.PatternLocalisation'
 
+local grippers = require 'xamlamoveit.grippers.env'
+--local grippers = require 'xamlamoveit.grippers'
+local index_grippers = {} --index each gripper with an int
+
 
 local function tryRequire(module_name)
   local ok, val = pcall(function() return require(module_name) end)
@@ -40,16 +44,47 @@ local GraspingState = {
 local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalibration)
 
 
-local GRIPPER_NS = '/xamla/wsg_driver/wsg50'
+--asks the user to select a gripper from grippers
+local function selectGripper(grippers)
+    for key,value in pairs(grippers) do
+        print(#index_grippers + 1, key)
+        index_grippers[#index_grippers + 1] = key
+    end
+    print('Select one gripper and press Enter')
+    local index = io.read("*n")
+    if index ~= nil and index > 0 and index == index then
+        return index_grippers[index]
+    else
+        print('Not a valid index')
+        return nil
+    end
+end
+
+
+--creates a gripper client for the specified key
+local function constructGripper(grippers, key, nh)
+    print(key)
+    if key == 'GenericRosGripperClient' then
+        local robotiq_action_name = '/xamla/robotiq_driver/robotiq2finger85/gripper_command'
+        return grippers[key].new(nh, robotiq_action_name)
+    elseif key == 'WeissTwoFingerModel' then
+        local wsg_namespace = '/xamla/wsg_driver/wsg50'
+        local wsg_action_name = 'wsg_50_common/Command'
+        return grippers[key].new(nh,wsg_namespace, wsg_action_name)
+    end
+end
 
 
 local function initializeGripperServices(self)
   local node_handle = ros.NodeHandle()
   self.node_handle = node_handle
-  self.gripper_status_client = node_handle:serviceClient(GRIPPER_NS .. '/get_gripper_status', 'wsg_50_common/GetGripperStatus')
-  self.ack_error_client = node_handle:serviceClient(GRIPPER_NS .. '/acknowledge_error', 'std_srvs/Empty')
-  self.set_force_client = node_handle:serviceClient(GRIPPER_NS .. '/set_force', 'wsg_50_common/SetValue')
-  self.gripper_action_server = actionlib.SimpleActionClient('wsg_50_common/Command', GRIPPER_NS .. '/gripper_control/', self.node_handle)
+  local key = selectGripper(grippers)
+  self.gripper = constructGripper(grippers, key, self.node_handle)
+  print(self.gripper)
+  --self.gripper_status_client = node_handle:serviceClient(GRIPPER_NS .. '/get_gripper_status', 'wsg_50_common/GetGripperStatus')
+  --self.ack_error_client = node_handle:serviceClient(GRIPPER_NS .. '/acknowledge_error', 'std_srvs/Empty')
+  --self.set_force_client = node_handle:serviceClient(GRIPPER_NS .. '/set_force', 'wsg_50_common/SetValue')
+  --self.gripper_action_server = actionlib.SimpleActionClient('wsg_50_common/Command', GRIPPER_NS .. '/gripper_control/', self.node_handle)
 end
 
 
@@ -67,11 +102,14 @@ end
 
 
 function AutoCalibration:shutdown()
-  if self.gripper_status_client ~= nil then
-    self.gripper_status_client:shutdown()
-    self.ack_error_client:shutdown()
-    self.set_force_client:shutdown()
-    self.gripper_action_server:shutdown()
+  --if self.gripper_status_client ~= nil then
+  --  self.gripper_status_client:shutdown()
+  --  self.ack_error_client:shutdown()
+  --  self.set_force_client:shutdown()
+  --  self.gripper_action_server:shutdown()
+  --end
+  if self.gripper ~= nil then
+    self.gripper:shutdown()
   end
 
   self.node_handle:shutdown()
@@ -116,8 +154,9 @@ end
 
 
 function AutoCalibration:pickCalibrationTarget()
-  self:homeGripper()
-
+  --self:homeGripper()
+  --will need to implement a home() method in the interface
+  self:closeGripper()
   local base_poses = self.configuration.base_poses
   assert(base_poses ~= nil)
   moveJ(self, base_poses['start'])
@@ -152,6 +191,12 @@ end
 
 function AutoCalibration:openGripper()
   -- this funtion should use move or release depending on gripper state -> open the gripper
+  if self.gripper ~= nil then
+    self.gripper:open()
+  else
+    print('Need to initialize the gripper')
+  end
+  --[[
   print('Opening gripper...')
   if self.gripper_status_client:exists() then
     if self.gripper_action_server:waitForServer(ros.Duration(5.0)) then
@@ -194,10 +239,17 @@ function AutoCalibration:openGripper()
   end
 
   --error('Release failed.')
+  ]]
 end
 
 
 function AutoCalibration:closeGripper()
+  if self.gripper ~= nil then
+    self.gripper:close()
+  else
+    print('Need to initialize the gripper')
+  end
+  --[[
   print('Closing gripper...')
 
   local set_force_response;
@@ -239,6 +291,7 @@ function AutoCalibration:closeGripper()
     ros.ERROR("Could not set gripper force")
   end
   --error('Grip failed.')
+  ]]
 end
 
 
