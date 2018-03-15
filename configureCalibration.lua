@@ -31,6 +31,7 @@ local GET_CONNECTED_DEVICES_SERVICE_NAME = '/ximea_mono/get_connected_devices'
 local DEFAULT_CAMERA_ID = 'left'
 local DEFAULT_EXPOSURE = 120000
 local DEFAULT_SLEEP_BEFORE_CAPTURE = 1.0
+local RIGHT_CAMERA_ID = 'right'
 
 
 local motion_service -- motion service
@@ -639,6 +640,11 @@ local function main(nh)
     -- create default configuration left
     configuration.cameras[DEFAULT_CAMERA_ID] = createCameraConfiguration(DEFAULT_CAMERA_ID, ximea_serials[1])
     configuration.left_camera_id = DEFAULT_CAMERA_ID
+    --if there is a second camera, create the configuration for it
+    if #ximea_serials == 2 then
+      configuration.cameras[RIGHT_CAMERA_ID] = createCameraConfiguration(RIGHT_CAMERA_ID, ximea_serials[2])
+      configuration.right_camera_id = RIGHT_CAMERA_ID
+    end
   end
 
   if #ximea_serials > 0 then
