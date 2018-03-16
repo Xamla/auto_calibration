@@ -16,8 +16,9 @@ require 'ximea.ros.XimeaClient'
 require 'multiPattern.PatternLocalisation'
 
 local grippers = require 'xamlamoveit.grippers.env'
---local grippers = require 'xamlamoveit.grippers'
 local index_grippers = {} --index each gripper with an int
+
+local ConfigurationCalibration = require 'ConfigurationCalibration' --class to manage the calibration data
 
 
 local function tryRequire(module_name)
@@ -90,6 +91,7 @@ end
 
 function AutoCalibration:__init(configuration, move_group, ximea_client, sl_studio)
   self.configuration = configuration
+  self.config_class = ConfigurationCalibration.new(configuration)  
   self.move_group = move_group
   self.ximea_client = ximea_client
   self.sl_studio = sl_studio
@@ -336,7 +338,7 @@ local function captureImage(self, i, camera_configuration, output_directory)
   local camera_serial = camera_configuration.serial
   local exposure = camera_configuration.exposure
   local sleep_before_capture = camera_configuration.sleep_before_capture
-
+ 
   -- wait configured time before capture
   if sleep_before_capture > 0 then
     printf('wait before capture %f s... ', sleep_before_capture)
@@ -352,6 +354,7 @@ local function captureImage(self, i, camera_configuration, output_directory)
   local pose = self.move_group:getCurrentPose()
 
   -- create output filename
+  output_directory = self.config_class:getCameraDataOutputPath(camera_serial)
   local fn = path.join(output_directory, string.format('cam_%s_%03d.png', camera_serial, i))
   if image:nDimension() > 2 then
     image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
@@ -394,6 +397,9 @@ function AutoCalibration:runCaptureSequence()
 
   print('Creating output directory')
   os.execute('mkdir -p ' .. output_directory)
+
+   -- create the folder structure where to put the captured data
+  self.config_class:createOutputDirectories()
 
   local pos_list = configuration.capture_poses
   assert(pos_list ~= nil and #pos_list > 0)
@@ -763,12 +769,22 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
 end
 
 
-function AutoCalibration:monoCalibration(calibrationFlags)
+function AutoCalibration:monoCalibration(calibrationFlags, folder)
   local image_paths = self.file_names
   local pattern_id = self.configuration.circle_pattern_id
   calibrationFlags = calibrationFlags or CalibrationFlags.Default
 
-  if image_paths == nil or #image_paths == 0 then
+  print('AutoCalibration:monoCalibration')
+  --new functionality to distinguish which camera we want to calibrate
+  if folder ~= nil then
+    printf("Looking for images in '%s'.", folder)
+    image_paths = findImages(folder)
+    if #image_paths == 0 then
+      print('No images found.')
+      return false
+    end
+
+  elseif image_paths == nil or #image_paths == 0 then
     local current_directory_path = path.join(self.configuration.output_directory, 'capture')
     printf("Looking for images in '%s'.", current_directory_path)
     image_paths = findImages(current_directory_path)
@@ -860,30 +876,41 @@ end
 
 ]]
 function AutoCalibration:altCalibrationPaths()
-    local configuration = self.configuration
-    local alt_directory = os.date(configuration.calibration_directory_template)
-    local alt_output_directory = path.join(configuration.output_directory, alt_directory)
-    --we need one directory inside alt_output_directory for each available camera
-    local camera_serials = {}
-    for key, value in pairs(self.configuration.cameras) do
-        camera_serials[#camera_serials + 1] = value.serial
-        local camera_directory = path.join(alt_output_directory, value.serial)
-        os.execute('mkdir -p ' .. camera_directory)
-    end
-    print(camera_serials)
+  local configuration = self.configuration
+  local config_class = ConfigurationCalibration.new(configuration)
+  config_class:createOutputDirectories()
+  config_class:debugOutputDirs()  
+  local serial = config_class:getSerialFromId('left')
+  print(config_class:getCameraDataOutputPath(serial))
+  print(config_class:getCameraCalibrationFileOutputPath(serial))
+  
 
-    local images_output_directory = path.join(alt_output_directory, 'capture')
-    print('Alternative output directory='..alt_output_directory)
-    print(configuration.cameras)
-    os.execute('mkdir -p ' .. alt_output_directory)
+  --[[
+  local alt_directory = os.date(configuration.calibration_directory_template)
+  local alt_output_directory = path.join(configuration.output_directory, alt_directory)
+  print('creating directory.. '..alt_output_directory)
+  os.execute('mkdir -p ' .. alt_output_directory)
+  --we need one directory inside alt_output_directory for each available camera
+  local camera_serials = {}
+  for key, value in pairs(self.configuration.cameras) do
+    camera_serials[#camera_serials + 1] = value.serial
+    local camera_directory = path.join(alt_output_directory, value.serial)
+    print('creating directory.. '..camera_directory)
+    os.execute('mkdir -p ' .. camera_directory)
+    local images_output_directory = path.join(camera_directory, 'capture')
+    print('creating directory.. '..images_output_directory)
     os.execute('mkdir -p ' .. images_output_directory)
+  end
+  print(camera_serials)
+]]
 
-    --create the generic file names structure
-    local generic_file_names = {}
-    for key, value in pairs(self.configuration.cameras) do
-        generic_file_names[key] = {}
-    end
-    print(generic_file_names)
+
+  --create the generic file names structure
+  local generic_file_names = {}
+  for key_camera_id, value in pairs(self.configuration.cameras) do
+      generic_file_names[key_camera_id] = {}
+  end
+  print(generic_file_names)
 
 end
 
