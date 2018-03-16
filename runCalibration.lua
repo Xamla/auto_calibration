@@ -40,6 +40,13 @@ local function moveToStartPose(wait)
 end
 
 
+local function altCalibrationPaths()
+  prompt:printTitle('Alternative calibration paths')
+  auto_calibration:altCalibrationPaths()  
+  prompt:anyKey()
+end
+
+
 local function showCurrentConfiguration()
   prompt:printTitle('Current configuration')
   print(configuration)
@@ -84,12 +91,98 @@ local function runCaptureSequence(wait)
   end
 end
 
+--http://notebook.kulchenko.com/algorithms/alphanumeric-natural-sorting-for-humans-in-lua
+function alphanumsort(o)
+   local function conv(s)
+      local res, dot = "", ""
+      for n, m, c in tostring(s):gmatch"(0*(%d*))(.?)" do
+         if n == "" then
+            dot, c = "", dot..c
+         else
+            res = res..(dot == "" and ("%03d%s"):format(#m, m)
+                                  or "."..n)
+            dot, c = c:match"(%.?)(.*)"
+         end
+         res = res..c:gsub(".", "\0%0")
+      end
+      return res
+   end
+   table.sort(o,
+      function (a, b)
+         local ca, cb = conv(a), conv(b)
+         return ca < cb or ca == cb and a < b
+      end)
+   return o
+end
+
+
+local function findDirectories(pattern, directory)
+  pattern = pattern or '.'
+  local l = {}
+  if path.exists(directory) then
+    for path_name in path.dir(directory) do
+      local full_path = path.join(directory, path_name)
+      print(full_path)
+      if path.isdir(full_path) and path_name:match(pattern) then
+        l[#l+1] = full_path
+      end
+    end
+  end
+  return alphanumsort(l)
+end
+
+
+function getFileName(url)
+  return url:match("^.+/(.+)$")
+end
+
+
+local function selectAndCalibrateMonocularCamera(folder)
+
+  --need to generate again the available folders/cameras
+
+  local generateMenuOptions = function()
+
+    -- generate menu options dynamically
+    local available_cameras = findDirectories("%d%d%d%d%d%d%d%d", folder)
+    local menu_options = {}
+    for key, dir in pairs(available_cameras) do
+        menu_options[#menu_options + 1] = {tostring(#menu_options + 1), string.format("Select  ('%s') ", dir), function() return auto_calibration:monoCalibration(nil,path.join(dir,'capture')) end}
+    end
+
+    menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
+    return menu_options
+  end
+  prompt:showMenu('Calibration Folder Selection', generateMenuOptions)
+end
+
+
+local function selectCalibrationFolder()
+
+    local generateMenuOptions = function()
+
+    -- generate menu options dynamically
+    local directories = findDirectories("._%d%d%d%d%d%d", './calibration')
+    local menu_options = {}
+    for key, folder in pairs(directories) do
+        menu_options[#menu_options + 1] = {tostring(#menu_options + 1), string.format("Select  ('%s') ", folder), function() selectAndCalibrateMonocularCamera(folder) return false end}
+    end
+
+    menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
+    return menu_options
+  end
+  prompt:showMenu('Calibration Folder Selection', generateMenuOptions)
+end
+
 
 local function calibrateCamera(wait)
   local mode = configuration.calibration_mode
 
   if mode == CalibrationMode.SingleCamera then
-    local ok = auto_calibration:monoCalibration()
+
+    -- still need to ask which camera, there need not only be one
+    local ok = selectCalibrationFolder()
+    --local ok = auto_calibration:monoCalibration()
     if ok then
       print('Calibration result:')
       print(auto_calibration.calibration)
@@ -151,6 +244,7 @@ local function showMainMenu()
     { 'f', 'Full calibraton cycle', runFullCycle },
     { 's', 'Save calibration', saveCalibration },
     { '1', 'Show current configuration', showCurrentConfiguration },
+    { 't', 'Test alternative calibration paths', altCalibrationPaths },
     { 'ESC', 'Quit', false },
   }
   prompt:showMenu('Main Menu', menu_options)
