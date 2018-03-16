@@ -37,6 +37,7 @@ function ConfigurationCalibration:__init(
   self.base_poses = configuration.base_poses or {}
   self.capture_poses = configuration.capture_poses or {}
   self.camera_outputs = {} --this will contain paths to store the data for each individual camera
+  
 end
 
 function ConfigurationCalibration:fromTable(t)
@@ -113,7 +114,7 @@ function ConfigurationCalibration:createOutputDirectories()
     local images_output_directory = path.join(camera_directory, 'capture')    
     print('creating directory.. '..images_output_directory)        
     os.execute('mkdir -p ' .. images_output_directory)
-    self.camera_outputs[value.serial].path_capture = camera_directory
+    self.camera_outputs[value.serial].path_capture = images_output_directory
   end
   print('self.camera_outputs=')
   print(self.camera_outputs)
@@ -129,6 +130,15 @@ end
 
 function ConfigurationCalibration:getCameraDataOutputPath(serial)
     return self.camera_outputs[serial].path_capture
+end
+
+function ConfigurationCalibration:getCameraCalibrationFileOutputPath(serial)
+    return path.join(self.camera_outputs[serial].path,'calibration.t7')
+end
+
+
+function ConfigurationCalibration:getSerialFromId(id)
+    return self.cameras[id].serial
 end
 
 
