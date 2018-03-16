@@ -383,6 +383,7 @@ end
 function AutoCalibration:runCaptureSequence()
   local configuration = self.configuration
   local file_names = {}
+  local generic_file_names = {}
   local recorded_joint_values = {}   -- measured after getImage call
   local recorded_poses = {}          -- poses of all joints after getImage call
 
@@ -846,6 +847,44 @@ function AutoCalibration:monoCalibration(calibrationFlags)
   }
 
   return true
+end
+
+--[[
+    Tests with the dbtool for an alternative folder structure
+    to save the calibration data
+    base path:
+    calibration/<date>_<time>/<left|right>_<serial #>
+                                                     /calibration.yaml: could store all paths here
+                                                     /calibration.t7
+                                                     /capture/cam_<serial#>_001.png
+
+]]
+function AutoCalibration:altCalibrationPaths()
+    local configuration = self.configuration
+    local alt_directory = os.date(configuration.calibration_directory_template)
+    local alt_output_directory = path.join(configuration.output_directory, alt_directory)
+    --we need one directory inside alt_output_directory for each available camera
+    local camera_serials = {}
+    for key, value in pairs(self.configuration.cameras) do
+        camera_serials[#camera_serials + 1] = value.serial
+        local camera_directory = path.join(alt_output_directory, value.serial)
+        os.execute('mkdir -p ' .. camera_directory)
+    end
+    print(camera_serials)
+
+    local images_output_directory = path.join(alt_output_directory, 'capture')
+    print('Alternative output directory='..alt_output_directory)
+    print(configuration.cameras)
+    os.execute('mkdir -p ' .. alt_output_directory)
+    os.execute('mkdir -p ' .. images_output_directory)
+
+    --create the generic file names structure
+    local generic_file_names = {}
+    for key, value in pairs(self.configuration.cameras) do
+        generic_file_names[key] = {}
+    end
+    print(generic_file_names)
+
 end
 
 
