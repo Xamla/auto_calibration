@@ -163,12 +163,6 @@ local function recordPoseList(count)
 end
 
 
-
-local function moveJ(pos)
-  move_group:moveJ(pos)
-end
-
-
 local function moveToStartPose()
   local base_poses = configuration.base_poses
   if base_poses == nil or #table.keys(base_poses) == 0 then
