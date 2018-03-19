@@ -581,8 +581,8 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
 
   local image_paths = self.file_names
   local pattern_id = self.configuration.circle_pattern_id
-  local left_camera = self.configuration.cameras[configuration.left_camera_id]
-  local right_camera = self.configuration.cameras[configuration.right_camera_id]
+  local left_camera = self.configuration.cameras[self.configuration.left_camera_id]
+  local right_camera = self.configuration.cameras[self.configuration.right_camera_id]
   local camera_serials = {left_camera.serial, right_camera.serial}
   calibrationFlags = calibrationFlags or CalibrationFlags.Default
 
