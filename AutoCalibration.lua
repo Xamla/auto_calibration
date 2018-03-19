@@ -81,11 +81,7 @@ local function initializeGripperServices(self)
   self.node_handle = node_handle
   local key = selectGripper(grippers)
   self.gripper = constructGripper(grippers, key, self.node_handle)
-  print(self.gripper)
-  --self.gripper_status_client = node_handle:serviceClient(GRIPPER_NS .. '/get_gripper_status', 'wsg_50_common/GetGripperStatus')
-  --self.ack_error_client = node_handle:serviceClient(GRIPPER_NS .. '/acknowledge_error', 'std_srvs/Empty')
-  --self.set_force_client = node_handle:serviceClient(GRIPPER_NS .. '/set_force', 'wsg_50_common/SetValue')
-  --self.gripper_action_server = actionlib.SimpleActionClient('wsg_50_common/Command', GRIPPER_NS .. '/gripper_control/', self.node_handle)
+  print(self.gripper)  
 end
 
 
@@ -103,13 +99,7 @@ function AutoCalibration:__init(configuration, move_group, ximea_client, sl_stud
 end
 
 
-function AutoCalibration:shutdown()
-  --if self.gripper_status_client ~= nil then
-  --  self.gripper_status_client:shutdown()
-  --  self.ack_error_client:shutdown()
-  --  self.set_force_client:shutdown()
-  --  self.gripper_action_server:shutdown()
-  --end
+function AutoCalibration:shutdown()  
   if self.gripper ~= nil then
     self.gripper:shutdown()
   end
@@ -197,51 +187,7 @@ function AutoCalibration:openGripper()
     self.gripper:open()
   else
     print('Need to initialize the gripper')
-  end
-  --[[
-  print('Opening gripper...')
-  if self.gripper_status_client:exists() then
-    if self.gripper_action_server:waitForServer(ros.Duration(5.0)) then
-      local gripper_status = self.gripper_status_client:call()
-      local g = self.gripper_action_server:createGoal()
-      if (gripper_status ~= nil and gripper_status.status ~= nil) then
-        if gripper_status.status.grasping_state_id == GraspingState.Idle then
-          g.command.command_id = 101
-        elseif gripper_status.status.grasping_state_id == GraspingState.Hold
-          or gripper_status.status.grasping_state_id == GraspingState.NoPartFound
-          or gripper_status.status.grasping_state_id == GraspingState.PartLost then
-
-          g.command.command_id = 103
-        else
-          ros.ERROR("Gripper is in wrong state. Please acknowledge any error and use homing. Grasping State: %d", gripper_status.status.grasping_state_id)
-          return
-        end
-      else
-        ros.ERROR("Gripper is in wrong state. Please acknowledge any error and use homing. Grasping State: nil")
-        return
-      end
-
-      g.command.speed = 0.2
-      g.command.width = 0.05
-
-      local state = self.gripper_action_server:sendGoalAndWait(g, 5, 5)
-      local result = self.gripper_action_server:getResult()
-      print(state, result)
-      if state == 7 and result ~= nil and result.status ~= nil and result.status.return_code == 0 then
-        ros.INFO("Opened gripper successfully")
-        return
-      else
-        ros.ERROR("Could not open gripper")
-      end
-    else
-      ros.ERROR("Could not contact gripper action server")
-    end
-  else
-    ros.ERROR("Could not query gripper status")
-  end
-
-  --error('Release failed.')
-  ]]
+  end  
 end
 
 
@@ -250,50 +196,7 @@ function AutoCalibration:closeGripper()
     self.gripper:close()
   else
     print('Need to initialize the gripper')
-  end
-  --[[
-  print('Closing gripper...')
-
-  local set_force_response;
-  if self.set_force_client:exists() then
-    local req = self.set_force_client:createRequest()
-    req.val = 50
-    set_force_response = self.set_force_client:call(req)
-  end
-
-  if set_force_response ~= nil and set_force_response.error == 0 then
-    if self.gripper_action_server:waitForServer(ros.Duration(5.0)) then
-      local g = self.gripper_action_server:createGoal()
-      g.command.command_id = 102
-      g.command.speed = 0.1
-      g.command.width = 0.01
-      g.command.force = 50
-	  
-      local state = self.gripper_action_server:sendGoalAndWait(g, 5, 5)
-      local result = self.gripper_action_server:getResult()
-
-      if state == 7 then
-        if result ~= nil and result.status ~= nil then
-          if result.status.return_code == 0 and result.status.grasping_state_id == GraspingState.Hold then
-            ros.INFO("Picked part successfully")
-            return
-          else
-            ros.ERROR("Could not pick part. gripper return code: %d, grasping state %d", result.status.return_code, result.status.grasping_state_id)
-          end
-        else
-          ros.ERROR("Could not close gripper: action server returned nil as gripper state");
-        end
-      else
-        ros.ERROR("Could not close gripper: action server returned state: %d: %s", state, SimpleClientGoalState[state])
-      end
-    else
-      ros.ERROR("Could not contact gripper action server")
-    end
-  else
-    ros.ERROR("Could not set gripper force")
-  end
-  --error('Grip failed.')
-  ]]
+  end  
 end
 
 
@@ -354,7 +257,7 @@ local function captureImage(self, i, camera_configuration, output_directory)
   local pose = self.move_group:getCurrentPose()
 
   -- create output filename
-  output_directory = self.config_class:getCameraDataOutputPath(camera_serial)
+  --output_directory = self.config_class:getCameraDataOutputPath(camera_serial)
   local fn = path.join(output_directory, string.format('cam_%s_%03d.png', camera_serial, i))
   if image:nDimension() > 2 then
     image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
@@ -588,8 +491,8 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
 
   local image_paths = self.file_names
   local pattern_id = self.configuration.circle_pattern_id
-  local left_camera = self.configuration.cameras[configuration.left_camera_id]
-  local right_camera = self.configuration.cameras[configuration.right_camera_id]
+  local left_camera = self.configuration.cameras[self.configuration.left_camera_id]
+  local right_camera = self.configuration.cameras[self.configuration.right_camera_id]
   local camera_serials = {left_camera.serial, right_camera.serial}
   calibrationFlags = calibrationFlags or CalibrationFlags.Default
 
@@ -641,8 +544,8 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       end
     end
 
-    cv.imshow {"Located point centers", pointImg}
-    cv.waitKey {-1}
+    --cv.imshow {"Located point centers", pointImg}
+    --cv.waitKey {-1}
 
     -- generate object points and mono calibrate both cameras
     if serial == left_camera.serial then
