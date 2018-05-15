@@ -10,6 +10,9 @@ and [miny, maxy) are considered to be half-closed intervals, the
 point (maxx, maxy) lies outside the rect.
 """
 
+import math
+
+
 class Rect:
   def __init__(self, minX, minY, maxX, maxY):
     self.minX = minX
@@ -105,3 +108,54 @@ class Rect:
   def unpack(self):
     return self.minX, self.minY, self.maxX, self.maxY
   
+  
+  def union(self, b):
+    minx = min(self.minX, b.minX)
+    miny = min(self.minY, b.minY)
+    maxx = max(self.maxX, b.maxX)
+    maxy = max(self.maxY, b.maxY)
+    return Rect(minx, miny, maxx, maxy)
+  
+
+  def intersect(self, b):
+    minx = max(self.minX, b.minX)
+    miny = max(self.minY, b.minY)
+    maxx = min(self.maxX, b.maxX)
+    maxy = min(self.maxY, b.maxY)
+    if maxx >= minx and maxy >= miny :
+      return Rect(minx, miny, maxx, maxy)
+    else :
+      return Rect(0, 0, 0, 0)
+    
+  
+  def IoU(self, b):
+    i = self.intersect(b).area() 
+    return i / (self.area() + b.area() - i)
+  
+
+  def toArray(self):
+    return [self.minX, self.minY, self.maxX, self.maxY]
+  
+
+  def snapToInt(self):
+    return Rect(math.floor(self.minX), math.floor(self.minY), math.ceil(self.maxX), math.ceil(self.maxY))
+  
+
+  def offset(self, x, y):
+    return Rect(self.minX + x, self.minY + y, self.maxX + x, self.maxY + y)
+  
+
+  # returns vertices in clockwise order
+  def vertices(self):
+    return [ (self.minX, self.minY),
+             (self.maxX, self.minY),
+             (self.maxX, self.maxY),
+             (self.minX, self.maxY) ]
+
+
+  def clone(self):
+    return Rect(self.minX, self.minY, self.maxX, self.maxY)
+  
+
+  def tostring(self):
+    return "min: ({:.2f}, {:.2f}), max: ({:.2f}, {:.2f}), size: ({:.2f} x {:.2f})".format(self.minX, self.minY, self.maxX, self.maxY, self.width(), self.height())
