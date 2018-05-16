@@ -249,12 +249,15 @@ def mapToGroundTruthImage(image_path, image_path_gt, calibration_path, marker_ro
     point_list_gt, camPoseList_gt = patternLocalizer.processImg(img_gt)
     #print("point_list:")
     #print(point_list)
-    #print("camPoseList:")
-    #print(camPoseList)
     #print("point_list_gt:")
     #print(point_list_gt)
-    #print("camPoseList_gt:")
-    #print(camPoseList_gt)
+    #i = 0
+    #while i < len(marker_ids) :
+    #  print("camPoseList['{}']:".format(marker_ids[i]))
+    #  print(camPoseList[str(marker_ids[i])])
+    #  print("camPoseList_gt['{}']:".format(marker_ids[i]))
+    #  print(camPoseList_gt[str(marker_ids[i])])
+    #  i += 1
 
     # sort markers and markers_gt correctly
     markers = []
