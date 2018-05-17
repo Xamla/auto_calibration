@@ -166,23 +166,23 @@ class PatternLocalisation:
     idRef = []
     idPoints = []
 
-    idRef.append(points[int(math.floor(nPoints/2.0 - 2*self.pattern["width"] -1))])  # dark ref. point, top left
-    idRef.append(points[int(math.floor(nPoints/2.0 + 2*self.pattern["width"] +1))])  # dark ref. point, bottom right
-    idRef.append(points[int(math.floor(nPoints/2.0 - 2*self.pattern["width"] +1))])  # light ref. point, bottom left
-    idRef.append(points[int(math.floor(nPoints/2.0 + 1*self.pattern["width"] +1))])  # light ref. point, center bottom left
-    idRef.append(points[int(math.floor(nPoints/2.0 + 2*self.pattern["width"] -1))])  # light ref. point, top left
+    idRef.append(points[int(math.ceil(nPoints/2.0 - 2*self.pattern["width"] -1))-1])  # dark ref. point, top left
+    idRef.append(points[int(math.ceil(nPoints/2.0 + 2*self.pattern["width"] +1))-1])  # dark ref. point, bottom right
+    idRef.append(points[int(math.ceil(nPoints/2.0 - 2*self.pattern["width"] +1))-1])  # light ref. point, bottom left
+    idRef.append(points[int(math.ceil(nPoints/2.0 + 1*self.pattern["width"] +1))-1])  # light ref. point, center bottom left
+    idRef.append(points[int(math.ceil(nPoints/2.0 + 2*self.pattern["width"] -1))-1])  # light ref. point, top left
 
     # sorted from least significant bit (1) to most significant bit (10)
-    idPoints.append(points[int(math.floor(nPoints/2.0 + 2*self.pattern["width"] -0))])  # bit 1
-    idPoints.append(points[int(math.floor(nPoints/2.0 - 2*self.pattern["width"] -0))])  # bit 2
-    idPoints.append(points[int(math.floor(nPoints/2.0 - 0*self.pattern["width"] -1))])  # bit 3
-    idPoints.append(points[int(math.floor(nPoints/2.0 - 0*self.pattern["width"] +1))])  # bit 4
-    idPoints.append(points[int(math.floor(nPoints/2.0 + 1*self.pattern["width"] -1))])  # bit 5
-    idPoints.append(points[int(math.floor(nPoints/2.0 - 1*self.pattern["width"] -0))])  # bit 6
-    idPoints.append(points[int(math.floor(nPoints/2.0 - 1*self.pattern["width"] -1))])  # bit 7
-    idPoints.append(points[int(math.floor(nPoints/2.0 - 0*self.pattern["width"] -0))])  # bit 8 (central dot)
-    idPoints.append(points[int(math.floor(nPoints/2.0 + 1*self.pattern["width"] -0))])  # bit 9
-    idPoints.append(points[int(math.floor(nPoints/2.0 - 1*self.pattern["width"] +1))])  # bit 10
+    idPoints.append(points[int(math.ceil(nPoints/2.0 + 2*self.pattern["width"] -0))-1])  # bit 1
+    idPoints.append(points[int(math.ceil(nPoints/2.0 - 2*self.pattern["width"] -0))-1])  # bit 2
+    idPoints.append(points[int(math.ceil(nPoints/2.0 - 0*self.pattern["width"] -1))-1])  # bit 3
+    idPoints.append(points[int(math.ceil(nPoints/2.0 - 0*self.pattern["width"] +1))-1])  # bit 4
+    idPoints.append(points[int(math.ceil(nPoints/2.0 + 1*self.pattern["width"] -1))-1])  # bit 5
+    idPoints.append(points[int(math.ceil(nPoints/2.0 - 1*self.pattern["width"] -0))-1])  # bit 6
+    idPoints.append(points[int(math.ceil(nPoints/2.0 - 1*self.pattern["width"] -1))-1])  # bit 7
+    idPoints.append(points[int(math.ceil(nPoints/2.0 - 0*self.pattern["width"] -0))-1])  # bit 8 (central dot)
+    idPoints.append(points[int(math.ceil(nPoints/2.0 + 1*self.pattern["width"] -0))-1])  # bit 9
+    idPoints.append(points[int(math.ceil(nPoints/2.0 - 1*self.pattern["width"] +1))-1])  # bit 10
 
     darkColor  = (self.getPatPointCenterColor(imgGray, idRef[0]) + self.getPatPointCenterColor(imgGray, idRef[1])) / 2.0
     lightColor = (self.getPatPointCenterColor(imgGray, idRef[2]) + self.getPatPointCenterColor(imgGray, idRef[3])
