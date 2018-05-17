@@ -15,7 +15,7 @@ img_path_right = '/home/altrogge/Desktop/Pipettenspitzen_Erkennung/Rack_Images/R
 calibration_path = '/home/altrogge/Desktop/Pipettenspitzen_Erkennung/python_results/stereo_calibration_as_dict_python3.npy'
 marker_rows = 3
 marker_cols = 5
-marker_point_dist = 0.003
+marker_point_dist = 0.0025
 marker_ids_as_string = '3,11'
 patternDictionary = '/home/altrogge/Desktop/Pipettenspitzen_Erkennung/patDictData.npy'
 
