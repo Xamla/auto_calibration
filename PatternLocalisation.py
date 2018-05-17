@@ -472,34 +472,19 @@ class PatternLocalisation:
       # Check, whether the normal vector z_unit_vec points into the correct direction.
       cross_product = np.cross(x_unit_vec, y_unit_vec)
       cross_product = cross_product / norm(cross_product)
-      i = 0
-      while i < 3 :
-        if abs(z_unit_vec[i]) > 0.1 :
-          if np.sign(z_unit_vec[i]) != np.sign(cross_product[i]) :
-            z_unit_vec *= -1.0
-            i = 10
-        i += 1
+      if z_unit_vec.dot(cross_product) < 0.0 :
+        z_unit_vec *= -1.0
 
       # x_unit_vec.dot(z_unit_vec) has to be zero.
       # Map x_unit_vec onto plane.
       new_x_unit_vec = x_unit_vec - x_unit_vec.dot(z_unit_vec) * z_unit_vec
-      i = 0
-      while i < 3 :
-        if abs(new_x_unit_vec[i]) > 0.1 :
-          if np.sign(new_x_unit_vec[i]) != np.sign(x_unit_vec[i]) :
-            new_x_unit_vec *= -1.0
-            i = 10
-        i += 1
+      if new_x_unit_vec.dot(x_unit_vec) < 0.0 :
+        new_x_unit_vec *= -1.0
 
       # Determine new y_unit_vec as cross product of x_unit_vec and z_unit_vec:
       new_y_unit_vec = np.cross(new_x_unit_vec, z_unit_vec)
-      i = 0
-      while i < 3 :
-        if abs(new_y_unit_vec[i]) > 0.1 :
-          if np.sign(new_y_unit_vec[i]) != np.sign(y_unit_vec[i]) :
-            new_y_unit_vec *= -1.0
-            i = 10
-        i += 1
+      if new_y_unit_vec.dot(y_unit_vec) < 0.0 :
+        new_y_unit_vec *= -1.0
 
       # Transform pattern coordinate system into camera coordinate system:
       # M_B->A = (x_unit_vec, y_unit_vec, z_unit_vec, support vector)
