@@ -1,3 +1,13 @@
+... explanation will be added soon ...
+
+### Some notes about the result folder structure:
+* Captured images will be stored in ``./calibration/capture/``
+* Robot poses will be stored in ``./calibration/offline/jsposes.t7``
+* Stereo calibration will be stored in ``./calibration/<date>/stereo_cams_<serial1>_<serial2>.t7`` (e.g. ``./calibration/2018-06-11_102302/stereo_cams_28670151_35371951.t7``)
+* For an extern stereo setup, hand-pattern calibration will be stored in ``./calibration/<date>/HandPattern.t7``, and moreover the pose of the left camera relative to the robot base will be stored in ``./calibration/<date>/LeftCamBase.t7``.
+* For an on-board stereo setup, ... to be continued ...
+
+
 ### Some notes about the pattern detector (in ``multiPattern/PatternLocalisation.lua``) 
 * The first detected pattern point (i.e. the **pattern origin**) always is the **top right** pattern point.
   * To see this, run e.g. **th [camPoseCalcForComparison.lua](https://github.com/Xamla/prototyping_altrogge/blob/master/pipette_tip_detection/camPoseCalcForComparison.lua)**, then open the image **[leftrack1_003.png](https://github.com/Xamla/prototyping_altrogge/blob/master/pipette_tip_detection/leftrack1_003.png)** with gimp and compare the first pixel point of e.g. **"point_list_left\[1\]"** (see terminal output) with the pixel coordinates of the top right pattern point of the corresponding pattern in the image.
