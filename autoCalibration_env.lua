@@ -33,6 +33,22 @@ local DEFAULT_CALIBRATION_FLAGS = {
 }
 
 
+local DEFAULT_STEREO_CALIBRATION_FLAGS = {
+  CALIB_USE_INTRINSIC_GUESS  = false,
+  CALIB_FIX_PRINCIPAL_POINT  = false,
+  CALIB_FIX_ASPECT_RATIO     = false,
+  CALIB_ZERO_TANGENT_DIST    = true,
+  CALIB_FIX_K1               = false,
+  CALIB_FIX_K2               = false,
+  CALIB_FIX_K3               = true,
+  CALIB_RATIONAL_MODEL       = false,
+  CALIB_FIX_K4               = true,
+  CALIB_FIX_K5               = true,
+  CALIB_FIX_K6               = true,
+  CV_CALIB_FIX_INTRINSIC     = true
+}
+
+
 local NO_DISTORTION_CALIBRATION_FLAGS = {
   CALIB_USE_INTRINSIC_GUESS  = false,
   CALIB_FIX_PRINCIPAL_POINT  = false,
@@ -80,6 +96,7 @@ local FULL_CALIBRATION_FLAGS = {
 
 local CalibrationFlags = {
   Default = DEFAULT_CALIBRATION_FLAGS,
+  DefaultStereo = DEFAULT_STEREO_CALIBRATION_FLAGS, --fix the intrinsic parameters of the cameras
   NoDistortion = NO_DISTORTION_CALIBRATION_FLAGS,
   OnlyK1Distortion = ONLY_K1_DISTORTION_CALIBRATION_FLAGS,
   Full = FULL_CALIBRATION_FLAGS

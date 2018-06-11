@@ -22,6 +22,9 @@ local CalibrationMode = autoCalibration.CalibrationMode
 local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
 require 'ximea.ros.XimeaClient'
 require 'AutoCalibration'
+local HandEye = require 'HandEye'
+
+local offline = true  -- in case we are reading images from files and not really connecting to the driver set offline to true
 
 
 local prompt
@@ -29,6 +32,8 @@ local configuration
 local motion_service
 local ximea_client
 local auto_calibration
+local hand_eye
+local end_effector
 
 
 local function moveToStartPose(wait)
@@ -42,7 +47,7 @@ end
 
 local function altCalibrationPaths()
   prompt:printTitle('Alternative calibration paths')
-  auto_calibration:altCalibrationPaths()  
+  auto_calibration:altCalibrationPaths()
   prompt:anyKey()
 end
 
@@ -87,7 +92,13 @@ local function runCaptureSequence(wait)
   end
 
   if go then
-    auto_calibration:runCaptureSequence()
+
+    -- check whether we are simulating or not
+    if offline then
+      auto_calibration:simulateCapture()
+    else
+      auto_calibration:runCaptureSequence()
+    end
   end
 end
 
@@ -175,14 +186,34 @@ local function selectCalibrationFolder()
 end
 
 
+-- used for the monocular camera calibration
+-- iterates over the cameras available in the configuration file
+-- the user needs to select one
+local function selectCamera()
+
+  ids = {}
+  for cam_index,serial  in pairs(configuration.cameras) do
+    print('camera=', configuration.cameras[cam_index].serial)
+    ids[#ids + 1] = configuration.cameras[cam_index].serial
+  end
+
+  local choice = prompt:chooseFromList(ids, 'Available Ximea cameras:')
+  if choice ~= nil then
+    print('selected camera ', choice)
+  end
+  return choice
+end
+
+
 local function calibrateCamera(wait)
   local mode = configuration.calibration_mode
 
   if mode == CalibrationMode.SingleCamera then
 
     -- still need to ask which camera, there need not only be one
-    local ok = selectCalibrationFolder()
-    --local ok = auto_calibration:monoCalibration()
+    --local ok = selectCalibrationFolder()
+    serial = selectCamera()
+    local ok = auto_calibration:monoCalibration(nil, nil,serial)
     if ok then
       print('Calibration result:')
       print(auto_calibration.calibration)
@@ -210,6 +241,78 @@ local function calibrateCamera(wait)
 end
 
 
+local function listCurrentImages(directory, serial)
+  pattern = "cam_"..serial.."_%d+%.png$"
+  local l = {}
+  if path.exists(directory) then
+    for file_name in path.dir(directory) do
+      local full_path = path.join(directory, file_name)
+      if path.isfile(full_path) and file_name:match(pattern) then
+        l[#l+1] = full_path
+      end
+    end
+  end
+  return alphanumsort(l)
+end
+
+
+local function generateCurrentCapturedImageLog(serial)
+  current_path = './calibration/capture/'
+  list_imgs = listCurrentImages(current_path, serial)
+  print(list_imgs)
+
+  imgData = {imagePaths = {}}
+  for key,path in pairs(list_imgs) do
+    imgData.imagePaths[#imgData.imagePaths + 1]  = path
+  end
+  return imgData
+end
+
+
+local function handEye()
+  prompt:printTitle('Hand-eye Calibration')
+
+  --load the jsposes.t7 file
+
+  if offline then
+    local offline_jsposes_fn = path.join(configuration.output_directory, 'offline', 'jsposes.t7')
+    print('Reading offline_jsposes_fn='..offline_jsposes_fn)
+    if path.exists(offline_jsposes_fn) then
+      jsposes = torch.load(offline_jsposes_fn)
+    else
+      print('Offline poses file does not exist: '..offline_jsposes_fn)
+      return false
+    end
+
+  else
+    local jsposes_fn = './calibration/current/jsposes.t7'
+    if path.exists(jsposes_fn) then
+      jsposes = torch.load(jsposes_fn)
+    else
+      print('Offline poses file does not exist: '..jsposes_fn)
+      return false
+    end
+
+  end
+
+  left_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.left_camera_id].serial)
+  right_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.right_camera_id].serial)
+  img_data = {}
+  img_data.imgDataLeft = left_cam_data
+  img_data.imgDataRight = right_cam_data
+  img_data.jsposes = jsposes
+
+  hand_eye:calibrate(img_data)
+  prompt:anyKey()
+end
+
+
+local function saveCalibration()
+  auto_calibration:saveCalibration()
+  prompt:anyKey()
+end
+
+
 local function runFullCycle(wait)
   prompt:printTitle('Full Cycle')
   if wait ~= false then
@@ -220,16 +323,96 @@ local function runFullCycle(wait)
     end
   end
 
-  pickCalibrationTarget(false)
-  runCaptureSequence(false)
-  returnCalibrationTarget(false)
-  calibrateCamera(false)
+
+  if offline then
+    runCaptureSequence(false)
+    calibrateCamera(false)
+    saveCalibration()
+    handEye()
+  else
+    pickCalibrationTarget(false)
+    runCaptureSequence(false)
+    returnCalibrationTarget(false)
+    calibrateCamera(false)
+    saveCalibration()
+    handEye()
+  end
+
 end
 
 
-local function saveCalibration()
-  auto_calibration:saveCalibration()
-  prompt:anyKey()
+--moves the pattern some distance along its x or y-axis
+local function movePattern()
+  prompt:printTitle('Move Pattern')
+  hand_eye:movePattern()
+end
+
+
+local function detectPattern()
+  prompt:printTitle('Detect Pattern')
+  hand_eye:detectPattern()
+end
+
+local function detectPatternPointCloud()
+  prompt:printTitle('Detect Pattern in Point Cloud')
+  hand_eye:locateCirclePatternInPointCloud()
+end
+
+local function detectPatternStereoPointCloud()
+  prompt:printTitle('Detect Pattern in Stereo Point Cloud')
+  hand_eye:locateCirclePatternInStereoPointCloud()
+end
+
+local function menuEvaluateCalibration()
+
+  local menu_options =
+  {
+
+    { 'e', 'Evaluate calibration', evaluateCalibration },
+    { 'm', 'Move the pattern 5cm towards the camera', movePattern },
+    { 'd', 'Detect pattern', detectPattern },
+    { 'g', 'Detect pattern in stereo point cloud', detectPatternStereoPointCloud },
+    { 'z', 'Create picking pose', pickingPose },
+    { 'n', 'Move end effector to marker', moveToMarker },
+    { 'q', 'Get point cloud', getPointCloud },
+
+    { 'ESC', 'Quit', false },
+  }
+  prompt:showMenu('Evaluate Calibration Menu', menu_options)
+
+end
+
+local function evaluateCalibration()
+  prompt:printTitle('Evaluate calibration')
+  hand_eye:evaluateCalibration()
+end
+
+
+local function pickingPose()
+  prompt:printTitle('Create picking pose')
+  hand_eye:pickingPose()
+end
+
+local function moveToMarker()
+  prompt:printTitle('Create picking pose')
+  hand_eye:moveToMarker()
+end
+
+local function getPointCloud()
+  prompt:printTitle('Get point cloud')
+  hand_eye:getPointCloud()
+end
+
+
+local function closeGripper()
+  prompt:printTitle('Close gripper')
+  hand_eye:closeGripper()
+end
+
+
+local function openGripper()
+  prompt:printTitle('Open gripper')
+  hand_eye:openGripper()
 end
 
 
@@ -241,7 +424,13 @@ local function showMainMenu()
     { 'r', 'Return calibration target', returnCalibrationTarget },
     { 'c', 'Capture calibration images', runCaptureSequence },
     { 'a', 'Calibrate camera', calibrateCamera },
+    { 'b', 'Hand-eye calibration', handEye },
     { 'f', 'Full calibraton cycle', runFullCycle },
+    { 'e', 'Evaluate calibration menu', menuEvaluateCalibration },
+    { 'x', 'Close gripper', closeGripper },
+    { 'y', 'Open gripper', openGripper },
+
+
     { 's', 'Save calibration', saveCalibration },
     { '1', 'Show current configuration', showCurrentConfiguration },
     { 't', 'Test alternative calibration paths', altCalibrationPaths },
@@ -358,7 +547,7 @@ local function main(nh)
   printf('Set velocity scaling: %f', configuration.velocity_scaling)
 
   auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, ximea_client)
-
+  hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, ximea_client, auto_calibration.gripper)
   showMainMenu()
 end
 
@@ -371,7 +560,13 @@ local function init()
   sp:start()
 
   motion_service = motionLibrary.MotionService(nh)
-  ximea_client = XimeaClient(nh, 'ximea_mono', false, false)
+  ximea_client = {}
+  -- in case we are reading images from files and not really connecting to the driver set offline to true
+  if not offline then
+    ximea_client = XimeaClient(nh, 'ximea_mono', false, false)
+  end
+
+
 
   prompt = xutils.Prompt()
   prompt:enableRawTerminal()
@@ -383,7 +578,9 @@ local function init()
   end
 
   motion_service:shutdown()
-  ximea_client:shutdown()
+  if not offline then
+    ximea_client:shutdown()
+  end
   sp:stop()
   ros.shutdown()
 end

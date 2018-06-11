@@ -1,10 +1,13 @@
 local ros = require 'ros'
+--local tf = ros.tf
 local actionlib = ros.actionlib
 local SimpleClientGoalState = actionlib.SimpleClientGoalState
 local xutils = require 'xamlamoveit.xutils'
 local autoCalibration = require 'autoCalibration_env'
 local CalibrationMode = autoCalibration.CalibrationMode
 local CalibrationFlags = autoCalibration.CalibrationFlags
+--local xamlamoveit = require 'xamlamoveit'
+--local datatypes = xamlamoveit.datatypes
 
 local cv = require 'cv'
 require 'cv.imgproc'
@@ -14,6 +17,8 @@ require 'cv.calib3d'
 
 require 'ximea.ros.XimeaClient'
 require 'multiPattern.PatternLocalisation'
+
+--local xml = require 'xml'  -- for exporting the .t7 calibration file to .xml
 
 local grippers = require 'xamlamoveit.grippers.env'
 local index_grippers = {} --index each gripper with an int
@@ -70,8 +75,10 @@ local function constructGripper(grippers, key, nh)
         return grippers[key].new(nh, robotiq_action_name)
     elseif key == 'WeissTwoFingerModel' then
         local wsg_namespace = '/xamla/wsg_driver/wsg50'
-        local wsg_action_name = 'wsg_50_common/Command'
-        return grippers[key].new(nh,wsg_namespace, wsg_action_name)
+        --local wsg_action_name = 'wsg_50_common/Command'
+        local wsg_action_name = 'gripper_control'
+        local name = '/xamla/wsg_driver/wsg50/gripper_control'
+        return grippers[key].new(nh,wsg_namespace, name)
     end
 end
 
@@ -79,33 +86,94 @@ end
 local function initializeGripperServices(self)
   local node_handle = ros.NodeHandle()
   self.node_handle = node_handle
-  local key = selectGripper(grippers)
+  --get the key from the configuration instead
+  --local key = selectGripper(grippers)
+  local key = self.configuration.gripper_key
   self.gripper = constructGripper(grippers, key, self.node_handle)
-  print(self.gripper)  
+  print(self.gripper)
+end
+
+--http://notebook.kulchenko.com/algorithms/alphanumeric-natural-sorting-for-humans-in-lua
+function alphanumsort(o)
+  local function conv(s)
+     local res, dot = "", ""
+     for n, m, c in tostring(s):gmatch"(0*(%d*))(.?)" do
+        if n == "" then
+           dot, c = "", dot..c
+        else
+           res = res..(dot == "" and ("%03d%s"):format(#m, m)
+                                 or "."..n)
+           dot, c = c:match"(%.?)(.*)"
+        end
+        res = res..c:gsub(".", "\0%0")
+     end
+     return res
+  end
+  table.sort(o,
+     function (a, b)
+        local ca, cb = conv(a), conv(b)
+        return ca < cb or ca == cb and a < b
+     end)
+  return o
 end
 
 
 function AutoCalibration:__init(configuration, move_group, ximea_client, sl_studio)
   self.configuration = configuration
-  self.config_class = ConfigurationCalibration.new(configuration)  
+  self.config_class = ConfigurationCalibration.new(configuration)
   self.move_group = move_group
   self.ximea_client = ximea_client
   self.sl_studio = sl_studio
 
   local ok, err = pcall(function() initializeGripperServices(self) end)
   if not ok then
-    --error('Gripper initialization failed: ' .. err)
+    error('Gripper initialization failed: ' .. err)
   end
+
+  self.tcp_frame_of_reference, self.tcp_end_effector_name = self:getEndEffectorName()
+  --create the calibrate/current folder if it does not exist
+  os.execute('mkdir -p ' .. configuration.output_directory)
+  self.current_path = path.join(configuration.output_directory, 'current')
+  os.execute('mkdir -p ' .. self.current_path)
+
+  -- create an output directory path so that jsposes.t7 and the calibration file are stored in the same directory
+  self.calibration_folder_name = os.date(configuration.calibration_directory_template)
+  print('self.calibration_folder_name= '..self.calibration_folder_name)
+  self.output_directory = path.join(configuration.output_directory, self.calibration_folder_name)
+  print('self.output_directory= '..self.output_directory)
+
+  -- if we are simulating a capture, we will load an old jsposes file
+  self.offline_jsposes_fn = path.join(configuration.output_directory, 'offline', 'jsposes.t7')
 end
 
 
-function AutoCalibration:shutdown()  
+function AutoCalibration:testMoveGroups()
+  local selected_move_group_name = self.configuration.move_group_name
+  local move_group_names, move_group_details = self.move_group.motion_service:queryAvailableMoveGroups()
+  print('HandEye:testMoveGroups() move_group_names, move_group_details')
+  print(move_group_names)
+  print(move_group_details)
+  local index = 1
+  local tcp_frame_of_reference = move_group_details[selected_move_group_name].end_effector_link_names[index]
+  local tcp_end_effector_name = move_group_details[selected_move_group_name].end_effector_names[index]
+  print('config selected tcp_end_effector='..tcp_end_effector_name)
+end
+
+
+function AutoCalibration:getEndEffectorName()
+  local move_group_names, move_group_details = self.move_group.motion_service:queryAvailableMoveGroups()
+  local index = 1
+  local tcp_frame_of_reference = move_group_details[move_group_names[1]].end_effector_link_names[index]
+  local tcp_end_effector_name = move_group_details[move_group_names[1]].end_effector_names[index]
+  return tcp_frame_of_reference,tcp_end_effector_name
+end
+
+
+function AutoCalibration:shutdown()
   if self.gripper ~= nil then
     self.gripper:shutdown()
   end
-
   self.node_handle:shutdown()
-
   if slstudio ~= nil then
     slstudio:closeCalibration()
   end
@@ -128,6 +196,11 @@ end
 local function moveJ(self, pos)
   assert(pos ~= nil, 'Target position is nil.')
   self.move_group:moveJ(pos)
+  --check that we arrived where we expected
+  local curPose = self.move_group:getCurrentPose():toTensor()
+  local curJoints = self.move_group:getCurrentJointValues()
+  --use move_group.motion_service.queryPose to do forward kinematics on the current joint state
+  --compare with the stored list: imgDataLeft.jointPoses[i].wrist_3_link
 end
 
 
@@ -148,6 +221,7 @@ end
 function AutoCalibration:pickCalibrationTarget()
   --self:homeGripper()
   --will need to implement a home() method in the interface
+  print('close the gripper')
   self:closeGripper()
   local base_poses = self.configuration.base_poses
   assert(base_poses ~= nil)
@@ -155,7 +229,7 @@ function AutoCalibration:pickCalibrationTarget()
   self:openGripper()
   moveJ(self, base_poses['pre_pick_marker'])
   moveJ(self, base_poses['pick_marker'])
-  self:closeGripper()
+  self:closeGripperMarker()
   moveJ(self, base_poses['post_pick_marker'], self.configuration.velocity_scaling * 0.25)
   moveJ(self, base_poses['start'])
 end
@@ -172,6 +246,32 @@ function AutoCalibration:returnCalibrationTarget()
 end
 
 
+function AutoCalibration:simulateCapture()
+
+  -- assume the captured images are already at the capture folder
+
+  --load jsposes.t7 file from the offline folder
+  local offline_jsposes
+  if path.exists(self.offline_jsposes_fn) then
+    print('Reading offline poses file ' .. self.offline_jsposes_fn)
+    offline_jsposes = torch.load(self.offline_jsposes_fn)
+  else
+    print(self.offline_jsposes_fn.. ': file does not exist')
+    return false
+  end
+
+  -- we restore the values so they can be saved afterwards
+  self.recorded_joint_values = {}
+  self.recorded_poses = {}
+  for i = 1, #self.recorded_joint_values do
+    print('restoring pose #'..i)
+    self.recorded_joint_values[i] = offline_jsposes.recorded_joint_values[i]
+    self.recorded_poses[i] = offline_jsposes.recorded_poses[i]
+  end
+  self:savePoses()
+end
+
+
 function AutoCalibration:runCaptureSequenceWithoutCapture()
   local pos_list = self.configuration.capture_poses
   assert(pos_list ~= nil and #pos_list > 0)
@@ -181,22 +281,52 @@ function AutoCalibration:runCaptureSequenceWithoutCapture()
 end
 
 
-function AutoCalibration:openGripper()
+function AutoCalibration:closeGripper()
+  local width = 0.001
+  local force = 60
+  local speed = 1.0
+  local acceleration = 0.1
+  local execute_timeout_in_s = 5
   -- this funtion should use move or release depending on gripper state -> open the gripper
   if self.gripper ~= nil then
-    self.gripper:open()
+    self.gripper:close(width, force, speed,acceleration,execute_timeout_in_s)
   else
     print('Need to initialize the gripper')
-  end  
+  end
 end
 
 
-function AutoCalibration:closeGripper()
+function AutoCalibration:closeGripperMarker()
+  local width = 0.001
+  local force = 60
+  local speed = 1.0
+  local acceleration = 0.1
+  local execute_timeout_in_s = 5
+  -- this funtion should use move or release depending on gripper state -> open the gripper
   if self.gripper ~= nil then
-    self.gripper:close()
+    -- the wsg50 needs the width of the part
+    if self.configuration.gripper_key == 'WeissTwoFingerModel' then
+      width = 0.0115
+    end
+    self.gripper:close(width, force, speed, acceleration, execute_timeout_in_s)
   else
     print('Need to initialize the gripper')
-  end  
+  end
+end
+
+
+function AutoCalibration:openGripper()
+  local width = 0.0615
+  local force = 60
+  local speed = 1.0
+  local acceleration = 0.1
+  local execute_timeout_in_s = 5
+  -- this funtion should use move or release depending on gripper state -> open the gripper
+  if self.gripper ~= nil then
+    self.gripper:open(width, force, speed,acceleration,execute_timeout_in_s )
+  else
+    print('Need to initialize the gripper')
+  end
 end
 
 
@@ -217,14 +347,11 @@ end
 
 function AutoCalibration:homeGripper()
   print('Homeing gripper')
-
-  if self.gripper_action_server:waitForServer(ros.Duration(5.0)) then
-    local g = self.gripper_action_server:createGoal()
+  if self.gripper.gripper_action_client:waitForServer(ros.Duration(5.0)) then
+    local g = self.gripper.gripper_action_client:createGoal()
     g.command.command_id = 104
-
-    local state = self.gripper_action_server:sendGoalAndWait(g, 5, 5)
-    local result = self.gripper_action_server:getResult()
-
+    local state = self.gripper.gripper_action_client:sendGoalAndWait(g, 5, 5)
+    local result = self.gripper.gripper_action_client:getResult()
     if state == 7 and result.status.return_code == 0 then
       ros.INFO("Homed gripper successfully")
     else
@@ -241,7 +368,7 @@ local function captureImage(self, i, camera_configuration, output_directory)
   local camera_serial = camera_configuration.serial
   local exposure = camera_configuration.exposure
   local sleep_before_capture = camera_configuration.sleep_before_capture
- 
+
   -- wait configured time before capture
   if sleep_before_capture > 0 then
     printf('wait before capture %f s... ', sleep_before_capture)
@@ -255,6 +382,8 @@ local function captureImage(self, i, camera_configuration, output_directory)
   -- get joint values and pose of image
   local joint_values = self.move_group:getCurrentJointValues()
   local pose = self.move_group:getCurrentPose()
+  --print('in captureImage pose = ')
+  --print(pose)
 
   -- create output filename
   --output_directory = self.config_class:getCameraDataOutputPath(camera_serial)
@@ -286,6 +415,31 @@ local function tryLoadCurrentCameraCalibration(self, camera_serial)
 end
 
 
+local function tryLoadCurrentCameraCalibrationFromStereo(self, camera_left_serial, camera_right_serial)
+  local current_output_directory = path.join(self.configuration.output_directory, 'current')
+  local calibration_fn = string.format('stereo_cams_%s_%s.t7', camera_left_serial, camera_right_serial)
+  local calibration_file_path = path.join(current_output_directory, calibration_fn)
+
+  printf("Probing for calibration file '%s'.", calibration_file_path)
+  if path.exists(calibration_file_path) then
+    return torch.load(calibration_file_path)
+  else
+    return nil
+  end
+end
+
+
+function getHomogeneousFromRosStampedPose(msg)
+  --convert to tensor
+  transf = tf.Transform.new()
+  q = msg.pose.orientation
+  t = msg.pose.position
+  transf:setRotation(tf.Quaternion.new(q.x,q.y,q.z,q.w))
+  transf:setOrigin({t.x,t.y,t.z})
+  return transf:toTensor()
+end
+
+
 function AutoCalibration:runCaptureSequence()
   local configuration = self.configuration
   local file_names = {}
@@ -302,7 +456,7 @@ function AutoCalibration:runCaptureSequence()
   os.execute('mkdir -p ' .. output_directory)
 
    -- create the folder structure where to put the captured data
-  self.config_class:createOutputDirectories()
+  --self.config_class:createOutputDirectories()
 
   local pos_list = configuration.capture_poses
   assert(pos_list ~= nil and #pos_list > 0)
@@ -329,7 +483,7 @@ function AutoCalibration:runCaptureSequence()
       print('Distortion coefficients:')
       print(distortion)
     else
-      printf("No existing camera calibration found for camera '%s'.", left_camera.serial)
+      print(string.format("No existing camera calibration found for camera '%s'.", left_camera.serial))
     end
 
     print('using cam', left_camera)
@@ -344,9 +498,9 @@ function AutoCalibration:runCaptureSequence()
       path.join(output_directory, 'newFrames')
     )
 
-    printf('Structured light initializaiton returned: %d', result)
+    printf(string.format('Structured light initializaton returned: %d', result))
   end
-
+  
   for i,p in ipairs(pos_list) do
 
     printf('Moving to position #%d...', i)
@@ -366,8 +520,8 @@ function AutoCalibration:runCaptureSequence()
       if right_camera ~= nil then
         local fn, joint_values, pose = captureImage(self, i, right_camera, output_directory)
         file_names[#file_names+1] = fn
-        recorded_joint_values[#recorded_joint_values+1] = joint_values
-        recorded_poses[#recorded_poses+1] = pose:toTensor()
+        --recorded_joint_values[#recorded_joint_values+1] = joint_values
+        --recorded_poses[#recorded_poses+1] = pose:toTensor()
       end
 
     elseif mode == CalibrationMode.StructuredLightSingleCamera then
@@ -383,6 +537,8 @@ function AutoCalibration:runCaptureSequence()
   self.file_names = file_names
   self.recorded_joint_values = recorded_joint_values
   self.recorded_poses = recorded_poses
+
+  self:savePoses()
 
   return file_names, recorded_joint_values, recorded_poses
 end
@@ -559,7 +715,7 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
 
       -- run calibration of left camera
       print('Running openCV camera calibration for left camera (serial: %s)...', serial)
-      local reprojError, camMatrix, distCoeffs, rvecs, tvecs =
+      local reprojError, camLeftMatrix, camLeftDistCoeffs, rvecs, tvecs =
         cv.calibrateCamera{
           objectPoints=objectPointsLeft,
           imagePoints=imagePointsLeft,
@@ -569,15 +725,15 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       print('Left camera calibration results:')
       printf('Reprojection error: %f', reprojError)
       print('Left camera matrix:')
-      print(camMatrix)
+      print(camLeftMatrix)
       print('Left camera distortion coefficients:')
-      print(distCoeffs)
+      print(camLeftDistCoeffs)
       self.leftCameraCalibration = {
         date = os.date('%Y-%m-%d %H:%M:%S'),
         patternGeometry = self.pattern_localizer.pattern,
         reprojError = reprojError,
-        camMatrix = camMatrix,
-        distCoeffs = distCoeffs,
+        camMatrix = camLeftMatrix,
+        distCoeffs = camLeftDistCoeffs,
         imWidth = width,
         imHeight = height,
         calibrationFlags = calibrationFlags
@@ -592,7 +748,7 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
 
       -- run calibration of right camera
       print('Running openCV camera calibration for right camera (serial: %s)...', serial)
-      local reprojError, camMatrix, distCoeffs, rvecs, tvecs =
+      local reprojError, camRightMatrix, camRightDistCoeffs, rvecs, tvecs =
         cv.calibrateCamera{
           objectPoints=objectPointsRight,
           imagePoints=imagePointsRight,
@@ -602,15 +758,15 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       print('Right camera calibration results:')
       printf('Reprojection error: %f', reprojError)
       print('Right camera matrix:')
-      print(camMatrix)
+      print(camRightMatrix)
       print('Right camera distortion coefficients:')
-      print(distCoeffs)
+      print(camRightDistCoeffs)
       self.rightCameraCalibration = {
         date = os.date('%Y-%m-%d %H:%M:%S'),
         patternGeometry = self.pattern_localizer.pattern,
         reprojError = reprojError,
-        camMatrix = camMatrix,
-        distCoeffs = distCoeffs,
+        camMatrix = camRightMatrix,
+        distCoeffs = camRightDistCoeffs,
         imWidth = width,
         imHeight = height,
         calibrationFlags = calibrationFlags
@@ -620,6 +776,9 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
 
   -- run stereo calibration
   print("Running openCV stereo camera calibration...")
+  print('calibrationFlags = ')
+  print(calibrationFlags)
+  --R and T seem to be the pose of the left camera in the right camera coordinate system
   local reprojError, camLeftMatrix, camLeftDistCoeffs, camRightMatrix, camRightDistCoeffs, R, T, E, F =
     cv.stereoCalibrate {
       objectPoints=objectPoints,
@@ -630,8 +789,12 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       cameraMatrix2 = self.rightCameraCalibration.camMatrix,
       distCoeffs2 = self.rightCameraCalibration.distCoeffs,
       imageSize = {width, height},
-      calibrationFlags = calibrationFlags
+      calibrationFlags = CalibrationFlags.DefaultStereo --force to set CV_CALIB_FIX_INTRINSIC
     }
+  print('R = ')
+  print(R)
+  print('T = ')
+  print(T)
 
   local trafoMatrix = torch.FloatTensor():eye(4)
   trafoMatrix[{{1, 3}, {1, 3}}] = R[{{1, 3}}]
@@ -672,16 +835,19 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
 end
 
 
-function AutoCalibration:monoCalibration(calibrationFlags, folder)
+function AutoCalibration:monoCalibration(calibrationFlags, folder, serial)
   local image_paths = self.file_names
   local pattern_id = self.configuration.circle_pattern_id
   calibrationFlags = calibrationFlags or CalibrationFlags.Default
+  -- store the selected serial so that we know later on when we save the file
+  self.mono_selected_cam_serial = serial
 
   print('AutoCalibration:monoCalibration')
   --new functionality to distinguish which camera we want to calibrate
   if folder ~= nil then
     printf("Looking for images in '%s'.", folder)
-    image_paths = findImages(folder)
+    local pattern = "cam_"..serial.."_%d+%.png$"
+    image_paths = alphanumsort(findImages(folder, pattern))
     if #image_paths == 0 then
       print('No images found.')
       return false
@@ -689,8 +855,9 @@ function AutoCalibration:monoCalibration(calibrationFlags, folder)
 
   elseif image_paths == nil or #image_paths == 0 then
     local current_directory_path = path.join(self.configuration.output_directory, 'capture')
-    printf("Looking for images in '%s'.", current_directory_path)
-    image_paths = findImages(current_directory_path)
+    local pattern = "cam_"..serial.."_%d+%.png$"
+    printf("Looking for images in '%s' with serial '%s'", current_directory_path,pattern)
+    image_paths = alphanumsort(findImages(current_directory_path, pattern))
     if #image_paths == 0 then
       print('No images found.')
       return false
@@ -768,45 +935,23 @@ function AutoCalibration:monoCalibration(calibrationFlags, folder)
   return true
 end
 
---[[
-    Tests with the dbtool for an alternative folder structure
-    to save the calibration data
-    base path:
-    calibration/<date>_<time>/<left|right>_<serial #>
-                                                     /calibration.yaml: could store all paths here
-                                                     /calibration.t7
-                                                     /capture/cam_<serial#>_001.png
 
-]]
+
+--  Tests with the dbtool for an alternative folder structure
+--  to save the calibration data 
+--  base path:
+--  calibration/<date>_<time>/<left|right>_<serial #>
+--                                                     /calibration.yaml: could store all paths here
+--                                                     /calibration.t7
+--                                                     /capture/cam_<serial#>_001.png
 function AutoCalibration:altCalibrationPaths()
   local configuration = self.configuration
   local config_class = ConfigurationCalibration.new(configuration)
   config_class:createOutputDirectories()
-  config_class:debugOutputDirs()  
+  config_class:debugOutputDirs()
   local serial = config_class:getSerialFromId('left')
   print(config_class:getCameraDataOutputPath(serial))
   print(config_class:getCameraCalibrationFileOutputPath(serial))
-  
-
-  --[[
-  local alt_directory = os.date(configuration.calibration_directory_template)
-  local alt_output_directory = path.join(configuration.output_directory, alt_directory)
-  print('creating directory.. '..alt_output_directory)
-  os.execute('mkdir -p ' .. alt_output_directory)
-  --we need one directory inside alt_output_directory for each available camera
-  local camera_serials = {}
-  for key, value in pairs(self.configuration.cameras) do
-    camera_serials[#camera_serials + 1] = value.serial
-    local camera_directory = path.join(alt_output_directory, value.serial)
-    print('creating directory.. '..camera_directory)
-    os.execute('mkdir -p ' .. camera_directory)
-    local images_output_directory = path.join(camera_directory, 'capture')
-    print('creating directory.. '..images_output_directory)
-    os.execute('mkdir -p ' .. images_output_directory)
-  end
-  print(camera_serials)
-]]
-
 
   --create the generic file names structure
   local generic_file_names = {}
@@ -814,17 +959,49 @@ function AutoCalibration:altCalibrationPaths()
       generic_file_names[key_camera_id] = {}
   end
   print(generic_file_names)
+end
 
+
+-- Saves the robot joint states and end effector poses of the capture run in a file: jsposes.t7
+-- Accesses the self.recorded_poses values
+function AutoCalibration:savePoses()
+    local configuration = self.configuration
+    local current_output_directory = path.join(configuration.output_directory, 'current')
+    local jsposes = {}
+    jsposes.recorded_joint_values = {}
+    jsposes.recorded_poses = {}
+    --create the structure to be saved
+    for i = 1, #self.recorded_joint_values do
+      print('recording pose #'..i)
+      jsposes.recorded_joint_values[i] = self.recorded_joint_values[i]
+      jsposes.recorded_poses[i] = self.recorded_poses[i]
+    end
+    print('AutoCalibration:savePoses()')
+    print(jsposes)
+    local poses_fn = 'jsposes.t7'
+    os.execute('mkdir -p ' .. self.output_directory)
+    local poses_file_path = path.join(self.output_directory, poses_fn)
+    os.execute('rm ' .. poses_file_path)
+    print('Saving poses file to: ' .. poses_file_path)
+    torch.save(poses_file_path, jsposes)
+
+    -- also linking pose file in current directory
+    local current_output_path = path.join(current_output_directory, poses_fn)
+    os.execute('rm ' .. current_output_path)
+    local link_target = path.join('..', self.calibration_folder_name, poses_fn)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 end
 
 
 function AutoCalibration:saveCalibration()
   local configuration = self.configuration
   local mode = configuration.calibration_mode
+  local camera_serial = self.mono_selected_cam_serial
 
   -- generate output directory path
-  local calibration_name = os.date(configuration.calibration_name_template)
-  local output_directory = path.join(configuration.output_directory, calibration_name)
+  local calibration_name = self.calibration_folder_name
+  local output_directory = self.output_directory
   local current_output_directory = path.join(configuration.output_directory, 'current')
   os.execute('mkdir -p ' .. output_directory)
   os.execute('mkdir -p ' .. current_output_directory)
@@ -835,9 +1012,6 @@ function AutoCalibration:saveCalibration()
       print('No calibration to save available.')
       return false
     end
-
-    local left_camera = self.configuration.cameras[configuration.left_camera_id]
-    local camera_serial = left_camera.serial
 
     local calibration_fn = string.format('cam_%s.t7', camera_serial)
     local calibration_file_path = path.join(output_directory, calibration_fn)
@@ -903,29 +1077,3 @@ function AutoCalibration:saveCalibration()
 
   return false
 end
-
---[[
- -- structured light scanning
-    if self.sl_studio ~= nil then
-      code, cloud, image_on, image_off = self.sl_studio:scan(20.0)
-      print ("got code: " .. code)
-      if code > -1 then
-        local slsOutputPath = path.join(output_directory, "" .. i)
-        path.mkdir(slsOutputPath)
-        local on_fn = path.join(slsOutputPath, 'on.png')
-        local off_fn = path.join(slsOutputPath, 'off.png')
-        local cloud_fn = path.join(slsOutputPath, 'cloud.pcd')
-        local pose_fn = path.join(slsOutputPath, 'pose.t7')
-
-        local p = self.move_group:getCurrentPose():toTensor()
-        local q = self.move_group:getCurrentJointValues()
-
-        cv.imwrite{on_fn, image_on}
-        cv.imwrite{off_fn, image_off}
-        cloud:savePCDFile(cloud_fn)
-        torch.save(pose_fn, { pose = p, joints = q })
-      else
-        printf("ERR: Error while scanning position #%d", i)
-      end
-    end
-]]

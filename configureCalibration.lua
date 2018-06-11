@@ -26,6 +26,9 @@ local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
 require 'ximea.ros.XimeaClient'
 require 'AutoCalibration'
 
+local grippers = require 'xamlamoveit.grippers.env'
+local index_grippers = {} --index each gripper with an int
+
 
 local GET_CONNECTED_DEVICES_SERVICE_NAME = '/ximea_mono/get_connected_devices'
 local DEFAULT_CAMERA_ID = 'left'
@@ -65,19 +68,43 @@ local configuration = {
   calibration_directory_template = '%Y-%m-%d_%H%M%S/',
   calibration_name_template = '%Y-%m-%d_%H%M%S',
   calibration_flags_name = 'Default',
-  circle_pattern_geometry = torch.Tensor({21, 8, 5.0}), -- rows, cols, pointDist
+  circle_pattern_geometry = torch.Tensor({21, 8, 0.005}), -- rows, cols, pointDist
   circle_pattern_id = 21,
-  checkerboard_pattern_geometry = torch.Tensor({7, 11, 10}),
+  checkerboard_pattern_geometry = torch.Tensor({7, 12, 10}),
   velocity_scaling = 0.2,
   base_poses = {},
   capture_poses = {},
+  gripper_key = '',
 }
+
+
+local function setGripper(key)
+  configuration.gripper_key =key
+  printf('New selected gripper key: %s', configuration.gripper_key)
+  prompt:anyKey()
+end
+
+
+local function selectGripper()
+
+  local generateMenuOptions = function()
+    local menu_options = {}
+    local i = 1
+    for k,v in pairs(grippers) do
+      menu_options[#menu_options + 1] = { tostring(i), string.format("Gripper key: '%s'", k), function() setGripper(k) return false end }
+      i = i + 1
+    end
+    menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
+    return menu_options
+  end
+
+  prompt:showMenu('Gripper Selection', generateMenuOptions)
+end
 
 
 local function getCameraIds()
   return table.keys(configuration.cameras)
 end
-
 
 
 local function queryXimeaSerials(nh)
@@ -609,6 +636,7 @@ local function showMainMenu()
       { '7', string.format('Set velocity scaling (%f)', configuration.velocity_scaling), setVelocityScaling },
       { '8', 'Actuator menu', showActuatorMenu },
       { '9', 'Dump configuration', dumpConfiguration },
+      { 'g', string.format('Gripper selection (%s)',configuration.gripper_key) , selectGripper },
       { 's', 'Save configuration',  saveConfiguration },
       { 'ESC', 'Quit', false },
     }
