@@ -90,6 +90,9 @@ local function initializeGripperServices(self)
   --local key = selectGripper(grippers)
   local key = self.configuration.gripper_key
   self.gripper = constructGripper(grippers, key, self.node_handle)
+  print('AutoCalibration calling home gripper via gripper:connect()')
+  self.gripper:connect()
+  print('gripper:')
   print(self.gripper)
 end
 
@@ -150,7 +153,7 @@ end
 function AutoCalibration:testMoveGroups()
   local selected_move_group_name = self.configuration.move_group_name
   local move_group_names, move_group_details = self.move_group.motion_service:queryAvailableMoveGroups()
-  print('HandEye:testMoveGroups() move_group_names, move_group_details')
+  print('AutoCalibration:testMoveGroups() move_group_names, move_group_details')
   print(move_group_names)
   print(move_group_details)
   local index = 1
@@ -483,7 +486,7 @@ function AutoCalibration:runCaptureSequence()
       print('Distortion coefficients:')
       print(distortion)
     else
-      print(string.format("No existing camera calibration found for camera '%s'.", left_camera.serial))
+      printf("No existing camera calibration found for camera '%s'.", left_camera.serial)
     end
 
     print('using cam', left_camera)
@@ -498,7 +501,7 @@ function AutoCalibration:runCaptureSequence()
       path.join(output_directory, 'newFrames')
     )
 
-    printf(string.format('Structured light initializaton returned: %d', result))
+    printf('Structured light initializaton returned: %d', result)
   end
   
   for i,p in ipairs(pos_list) do
@@ -937,9 +940,8 @@ end
 
 
 
---  Tests with the dbtool for an alternative folder structure
---  to save the calibration data 
---  base path:
+--  Tests with the debug tool for an alternative folder structure to save the calibration data
+--  Base path:
 --  calibration/<date>_<time>/<left|right>_<serial #>
 --                                                     /calibration.yaml: could store all paths here
 --                                                     /calibration.t7
