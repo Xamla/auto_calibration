@@ -347,7 +347,6 @@ local function movePattern()
   hand_eye:movePattern()
 end
 
-
 local function detectPattern()
   prompt:printTitle('Detect Pattern')
   hand_eye:detectPattern()
@@ -363,30 +362,20 @@ local function detectPatternStereoPointCloud()
   hand_eye:locateCirclePatternInStereoPointCloud()
 end
 
-local function menuEvaluateCalibration()
+local function getPointCloud()
+  prompt:printTitle('Get point cloud')
+  hand_eye:getPointCloud()
+end
 
-  local menu_options =
-  {
-
-    { 'e', 'Evaluate calibration', evaluateCalibration },
-    { 'm', 'Move the pattern 5cm towards the camera', movePattern },
-    { 'd', 'Detect pattern', detectPattern },
-    { 'g', 'Detect pattern in stereo point cloud', detectPatternStereoPointCloud },
-    { 'z', 'Create picking pose', pickingPose },
-    { 'n', 'Move end effector to marker', moveToMarker },
-    { 'q', 'Get point cloud', getPointCloud },
-
-    { 'ESC', 'Quit', false },
-  }
-  prompt:showMenu('Evaluate Calibration Menu', menu_options)
-
+local function getStereoPointCloud()
+  prompt:printTitle('Get stereo point cloud')
+  hand_eye:getStereoPointCloud()
 end
 
 local function evaluateCalibration()
   prompt:printTitle('Evaluate calibration')
   hand_eye:evaluateCalibration()
 end
-
 
 local function pickingPose()
   prompt:printTitle('Create picking pose')
@@ -398,21 +387,46 @@ local function moveToMarker()
   hand_eye:moveToMarker()
 end
 
-local function getPointCloud()
-  prompt:printTitle('Get point cloud')
-  hand_eye:getPointCloud()
+local function moveToMarkerWithPrePickPose()
+  prompt:printTitle('Moving to int marker with pre-pick pose')
+  hand_eye:moveToIntMarkerPoseWithPrePick()
 end
 
+local function moveToInitPoseSupervised()
+  prompt:printTitle('Move to stored pose in supervised mode')
+  hand_eye:moveToInitPoseSupervised()
+end
 
 local function closeGripper()
   prompt:printTitle('Close gripper')
   hand_eye:closeGripper()
 end
 
-
 local function openGripper()
   prompt:printTitle('Open gripper')
   hand_eye:openGripper()
+end
+
+
+local function menuEvaluateCalibration()
+
+  local menu_options =
+  {
+
+    { 'e', 'Evaluate calibration', evaluateCalibration },
+    { 'm', 'Move the pattern 5cm towards the camera', movePattern },
+    { 'd', 'Detect pattern', detectPattern },
+    { 'g', 'Detect pattern in stereo point cloud', detectPatternStereoPointCloud },
+    { 'z', 'Create picking pose', pickingPose },
+    { 'n', 'Move end effector to int marker', moveToMarkerWithPrePickPose },
+    { 'i', 'Move to initial pose supervised', moveToInitPoseSupervised },
+    { 'q', 'Get point cloud', getPointCloud },
+    { 's', 'Get stereo point cloud', getStereoPointCloud },
+
+    { 'ESC', 'Quit', false },
+  }
+  prompt:showMenu('Evaluate Calibration Menu', menu_options)
+
 end
 
 
@@ -546,8 +560,11 @@ local function main(nh)
   move_group:setVelocityScaling(configuration.velocity_scaling)
   printf('Set velocity scaling: %f', configuration.velocity_scaling)
 
+  local motion_service = motionLibrary.MotionService(nh)
+  local xamla_mg = motionLibrary.MoveGroup(motion_service, configuration.move_group_name) -- motion client
+
   auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, ximea_client)
-  hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, ximea_client, auto_calibration.gripper)
+  hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, motion_service, ximea_client, auto_calibration.gripper, xamla_mg)
   showMainMenu()
 end
 

@@ -18,11 +18,12 @@ local DebugTools = torch.class('autoCalibration.DebugTools', debugTools)
 -- Class for publishing tfs, images on ROS
 -- image_topics = {"img_topic_1", "img_topic_2", ...}
 --
-function DebugTools:__init(point_cloud_topic, image_topics)
+function DebugTools:__init(point_cloud_topics, image_topics)
 
   self.default_img_topic = 'debug_img_1'
-  point_cloud_topic = point_cloud_topic or 'point_cloud'
+  self.default_point_cloud_topic = 'point_cloud'
   image_topics = image_topics or {self.default_img_topic}
+  point_cloud_topics = point_cloud_topics or {self.default_point_cloud_topic}
   ros.init('debug_tools')
   self.spinner = ros.AsyncSpinner()
   self.spinner:start()
@@ -34,7 +35,7 @@ function DebugTools:__init(point_cloud_topic, image_topics)
   self.listener = tf.TransformListener.new()
   self.broadcaster = tf.TransformBroadcaster.new()
   self.img_publisher_1 = self.nh:advertise(self.default_img_topic, 'sensor_msgs/Image', 10)
-  self.publisher_cloud_1 = self.nh:advertise(point_cloud_topic, 'sensor_msgs/PointCloud2', 10)
+  self.publisher_cloud_1 = self.nh:advertise(self.default_point_cloud_topic, 'sensor_msgs/PointCloud2', 10)
 
   -- iterate over image topics
   self.img_publishers = {}
@@ -43,12 +44,26 @@ function DebugTools:__init(point_cloud_topic, image_topics)
     self.img_publishers[topic] = self.nh:advertise(topic, 'sensor_msgs/Image', 10)
   end
 
+  self.pcloud_publishers = {}
+  for _, topic in ipairs(point_cloud_topics) do
+    print('Creating point cloud publisher on topic ', topic)
+    self.pcloud_publishers[topic] = self.nh:advertise(topic, 'sensor_msgs/PointCloud2', 10)
+  end
+
 end
 
 
-function DebugTools:publishCloud(cloud, frame_id)
+function DebugTools:publishCloud(cloud, frame_id, topic)
+
+  topic = topic or self.default_point_cloud_topic
   cloud:setHeaderFrameId(frame_id)
-  self.publisher_cloud_1:publish(cloud)
+
+  if self.pcloud_publishers[topic] == nil then
+    self.publisher_cloud_1:publish(cloud)
+  else
+    self.pcloud_publishers[topic]:publish(cloud)
+  end
+
   ros.Duration(0.1):sleep()
 end
 
@@ -57,10 +72,11 @@ function DebugTools:requestTf(source_frame_id, target_frame_id)
 
   local available = self.listener:waitForTransform(target_frame_id, source_frame_id, ros.Time(0), ros.Duration(3))
   if available then
-    local H = self.listener:lookupTransform(target_frame_id, source_frame_id, ros.Time(0), H)
-    return available, H
+    local H_tf
+    H_tf = self.listener:lookupTransform(target_frame_id, source_frame_id, ros.Time(0), H_tf)
+    return available, H_tf
   end
-  return available, H
+  return available, nil
 end
 
 

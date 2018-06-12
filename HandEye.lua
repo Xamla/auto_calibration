@@ -1,5 +1,8 @@
 local xamla3d = require 'xamla3d'
 local calib = require 'handEyeCalibration'
+local motionLibrary = require 'xamlamoveit.motionLibrary'
+local xutils = require 'xamlamoveit.xutils'
+local datatypes = require 'xamlamoveit.datatypes'
 
 local cv = require "cv"
 require "cv.highgui"
@@ -19,9 +22,18 @@ require "multiPattern.PatternLocalisation"
 local ros = require 'ros'
 local tf = ros.tf
 local listener = tf.TransformListener
---local slstudio = require 'slstudio'
 local debug = require 'DebugTools'
 
+local function tryRequire(module_name)
+  local ok, val = pcall(function() return require(module_name) end)
+  if ok then
+    return val
+  else
+    return nil
+  end
+end
+
+local slstudio = tryRequire('slstudio')
 
 -- Important: Everything has to be in meters [m]!!!
 
@@ -52,12 +64,14 @@ local HandEye = torch.class('autoCalibration.HandEye', handEye)
 
 local marker_frame_id = 'int_marker'
 local world_frame_id = 'world'
-local pcloud_frame_id = 'camera_left'--'camera_left'
+local pcloud_frame_id = 'camera_left'
+local left_camera_frame_id = 'camera_left'
 local desired_tcp_frame_id = 'desired_tcp'
 local picking_pose_frame_id = 'picking_pose'
 local pre_picking_pose_frame_id = 'pre_picking_pose'
 local pattern_pcloud_frame_id = 'pattern_cloud'
 local pattern_frame_id = 'pattern'
+local torso_frame_id = 'torso_link_b1'
 
 
 local function fprint(...)
@@ -65,14 +79,28 @@ local function fprint(...)
 end
 
 
-function HandEye:__init(configuration, calibration_folder_name, move_group, ximea_client, gripper)
+function HandEye:__init(configuration, calibration_folder_name, move_group, motion_service, ximea_client, gripper, xamla_mg)
 
-  self.debug = debug.new('point_cloud', {'pattern_detection_left', 'pattern_detection_right'})
-  self.debug_right = debug.new('input_cloud_right')
+  self.cloud_topics = {'point_cloud', 'filtered_cloud'}
+  self.img_topics = {'pattern_detection_left', 'pattern_detection_right'}
+  self.debug = debug.new(self.cloud_topics, self.img_topics)
+  print('debug class initialised')
   self.configuration = configuration
   self.move_group = move_group
   self.ximea_client = ximea_client
   self.fingertip_frame_id = 'tcp_fingertip_link'
+  self.xamla_mg = xamla_mg
+  self.motion_service = motion_service
+
+  self.move_groups = self.motion_service:getMoveGroup()  -- If no name is specified first move group is used.
+  self.rc = self:getEndEffectors(self.move_groups)
+  if self.rc == nil then
+    return
+  end
+  self.right_move_group = self.motion_service:getMoveGroup(self.rc.right_move_group_name)
+  self.left_move_group = self.motion_service:getMoveGroup(self.rc.left_move_group_name)
+  self.both_move_group = self.motion_service:getMoveGroup(self.rc.both_move_group_name)
+  self.xamla_mg_both = motionLibrary.MoveGroup(self.motion_service, self.rc.both_move_group_name) -- motion client
 
   self.gripper = gripper
   self.calibration_folder_name = calibration_folder_name
@@ -92,15 +120,18 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, xime
   self:loadStereoCalibration(self.stereo_calibration_path)
   self.tcp_frame_of_reference, self.tcp_end_effector_name = self:getEndEffectorName()
 
+
   -- request the tf between the fingetips and the current end effector
-  local tf_available, H_fingers_to_tcp = self.debug:requestTf(self.tcp_frame_of_reference, self.fingertip_frame_id)
+  --print('self:requestTf...', self.tcp_frame_of_reference, ' ', self.fingertip_frame_id)
+  print('self:requestTf...', self.tcp_frame_of_reference, ' ', self.tcp_frame_of_reference)
+  local tf_available, H_fingers_to_tcp = self.debug:requestTf(self.tcp_frame_of_reference, self.tcp_frame_of_reference)
   if not tf_available then
     print('tf not available! '..self.fingertip_frame_id..' to '..self.tcp_end_effector_name)
     return
   end
   self.H_fingers_to_tcp = H_fingers_to_tcp
-  --print('self.H_fingers_to_tcp')
-  --print(self.H_fingers_to_tcp)
+  print('self.H_fingers_to_tcp')
+  print(self.H_fingers_to_tcp)
 
 end
 
@@ -123,27 +154,73 @@ end
 
 function HandEye:getEndEffectorName()
   local move_group_names, move_group_details = self.move_group.motion_service:queryAvailableMoveGroups()
-  --print('HandEye:getEndEffectorName() move_group_names, move_group_details')
-  --print(move_group_names)
-  --print(move_group_details)
+  print('HandEye:getEndEffectorName() move_group_names, move_group_details')
+  print(move_group_names)
+  print(move_group_details)
+
+  -- find out the index of the selected move_group
+  local index_ur = 1
+  for i = 1, #move_group_names do
+    if move_group_names[i] == self.configuration.move_group_name then
+      index_ur = i
+      print(self.configuration.move_group_name, ' index=',index_ur)
+    end
+  end
+
 
   local index = 1
-  local tcp_frame_of_reference = move_group_details[move_group_names[1]].end_effector_link_names[index]
-  local tcp_end_effector_name = move_group_details[move_group_names[1]].end_effector_names[index]
+  local tcp_frame_of_reference = move_group_details[move_group_names[index_ur]].end_effector_link_names[1]
+  local tcp_end_effector_name = move_group_details[move_group_names[index_ur]].end_effector_names[1]
   return tcp_frame_of_reference,tcp_end_effector_name
 end
 
 
+function HandEye:getEndEffectors(move_groups)
+  local move_group_names, move_group_details = move_groups.motion_service:queryAvailableMoveGroups()
+  local rc = {}
+  print('HandEye:getEndEffectors(): move_group_names')
+  print(move_group_names)
+
+  if #move_group_names == 1 then -- UR
+    --print('#move_group_names ~= 6: is this an SDA?')
+    --return nil
+    rc.tcp_frame_of_reference = move_group_details[move_group_names[1]].end_effector_link_names[1]
+    rc.tcp_end_effector_name = move_group_details[move_group_names[1]].end_effector_names[1]
+    rc.move_group_name = move_group_names[1]
+  end
+
+  if #move_group_names >= 6 then -- SDA
+    local index = 5
+    rc.left_tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
+    rc.left_tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
+    rc.left_move_group_name = move_group_names[index]
+
+    index = 6
+    rc.right_tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
+    rc.right_tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
+    rc.right_move_group_name = move_group_names[index]
+
+    index = 1
+    rc.both_tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
+    rc.both_tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
+    rc.both_move_group_name = move_group_names[index]
+  end
+
+  return rc
+end
+
+
+
 function HandEye:closeGripper()
 
-  local width = 0.001 --0.0115
+  local width = 0.002 --0.0115
   local force = 60
   local speed = 1.0
   local acceleration = 0.1
   local execute_timeout_in_s = 5
   -- this funtion should use move or release depending on gripper state -> open the gripper
   if self.gripper ~= nil then
-    self.gripper:open(width, force, speed,acceleration,execute_timeout_in_s )
+    self.gripper:close(width, force, speed,acceleration,execute_timeout_in_s )
   else
     print('Need to initialize the gripper')
   end
@@ -764,9 +841,12 @@ function HandEye:calibrate(imgData)
   camBaseTrafo = Hg[1] * bestHESolution * Hc[1]
   print(camBaseTrafo)
   print('publish tf world_frame_id camera_left')
-  self.debug:publishTf(camBaseTrafo, world_frame_id, "camera_left")
+  -- publish
+  for  i = 1, 10 do
+    self.debug:publishTf(camBaseTrafo, world_frame_id, left_camera_frame_id)
+  end
   print('publish tf camera_left pattern')
-  self.debug:publishTf(torch.inverse(Hc[#Hc]), "camera_left", "pattern")
+  self.debug:publishTf(torch.inverse(Hc[#Hc]), left_camera_frame_id, pattern_frame_id)
 
   -- Switch between left/right cam:
   ---------------------------------
@@ -778,8 +858,25 @@ function HandEye:calibrate(imgData)
   os.execute('rm ' .. current_output_path)
   os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
 
+  -- request the tf to the torso link (if it exists)
+  print('requesting tf from camera left to torso...')
+  local tf_available, H_cam_to_torso_tf = self.debug:requestTf(left_camera_frame_id, torso_frame_id)
+  current_output_path = path.join(self.current_path, 'LeftCamTorso.t7')
+  os.execute('rm ' .. current_output_path)
+  if not tf_available then
+    print('tf not available! '..left_camera_frame_id..' to '..torso_frame_id)
+  else
+    local H_cam_to_torso = H_cam_to_torso_tf:toTensor()
+    file_output_path = path.join(output_path, 'LeftCamTorso.t7')
+    torch.save(file_output_path, H_cam_to_torso)
+    link_target = path.join('..', self.calibration_folder_name, 'LeftCamTorso.t7')
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    self.H_cam_to_torso = H_cam_to_torso
+  end
+
   self.H_pattern_to_tcp = bestHESolution
   self.H_cam_to_base = camBaseTrafo
+
   return bestHESolution, camBaseTrafo
 end
 
@@ -844,8 +941,8 @@ end
 function HandEye:generateRelativeRotation(O)
   local O = O or torch.eye(4,4)
   local q = tf.Quaternion.new()
-  local roll = 0.0
-  local pitch = 0.1
+  local roll = 0.1
+  local pitch = -0.1
   local yaw = 0.0
   q:setEuler(yaw, pitch, roll)
   local R = torch.eye(4,4)
@@ -856,9 +953,9 @@ end
 
 function HandEye:generateRelativeTranslation(O)
   local O = O or torch.eye(4,4)
-  local x_offset = 0.
+  local x_offset = 0.0
   local y_offset = 0.0
-  local z_offset = -0.25
+  local z_offset = 0.0
 
   H = torch.eye(4,4)
   H[1][4] = x_offset
@@ -884,9 +981,21 @@ function HandEye:movePattern()
   local last_pose = self.configuration.capture_poses[#self.configuration.capture_poses]
   self.move_group:moveJ(last_pose)
 
-  --2. estimate the pose of the pattern
+  --2. estimate the pose of the pattern (i.e. the last capture pose)
   local left_camera_config = self.configuration.cameras[self.configuration.left_camera_id]
   local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
+
+  --local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
+  --nr = #self.configuration.capture_poses
+  --left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+  --right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+  --print("left_img_path:")
+  --print(left_img_path)
+  --print("right_img_path:")
+  --print(right_img_path)
+  --left_img = cv.imread{left_img_path}
+  --right_img = cv.imread{right_img_path}
+
   left_img = self:captureImageNoWait(left_camera_config)
   right_img = self:captureImageNoWait(right_camera_config)
   self.debug:publishImg(left_img)
@@ -901,7 +1010,8 @@ function HandEye:movePattern()
     return ok, pattern_pose_cam_coords
   end
 
-  print('detected pattern before motion=', pattern_pose_cam_coords)
+  print('detected pattern before motion:')
+  print(pattern_pose_cam_coords)
   self.debug:publishTf(pattern_pose_cam_coords,'camera_left', 'pattern')
   self.debug:publishTf(pattern_pose_cam_coords,'camera_left', 'pattern')
   self.debug:publishTf(pattern_pose_cam_coords,'camera_left', 'pattern')
@@ -920,8 +1030,9 @@ function HandEye:movePattern()
     self.debug:publishTf(pattern_transformation,'pattern', 'pattern_shift')
 
     self.predicted_pattern_pose_cam_coords = pattern_pose_cam_coords*pattern_transformation
-    print('predicted pattern in camera_left coords=', self.predicted_pattern_pose_cam_coords)
-    print('compare with the next pattern detection ;)')
+    print('predicted pattern in camera_left coords:')
+    print(self.predicted_pattern_pose_cam_coords)
+    print('compare with the next pattern detection:')
 
     --self.debug:publishTf(R,'pattern', 'pattern_rotation')
 
@@ -934,9 +1045,8 @@ function HandEye:movePattern()
     self.debug:publishTf(pose_tcp,self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
     self.debug:publishTf(pose_tcp,self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
 
-    local velocity_scaling = 1
     local check_for_collisions = true
-    self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, velocity_scaling, collision_check)
+    self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check)
 
     return ok, self.predicted_pattern_pose_cam_coords
 
@@ -947,12 +1057,18 @@ end
 
 
 function HandEye:evaluateCalibration()
+  print('HandEye:evaluateCalibration()')
   local ok, prediction = self:movePattern() -- stores the predicted pose of the pattern at self.predicted_pattern_pose_cam_coords and returns it
-  local detection = self:detectPattern()
   if not ok then
     print('aborting evaluation')
     return
   end
+  local detection = self:detectPattern()
+  if detection == nil then
+    print('pattern not detected, aborting evaluation')
+    return
+  end
+
   print('detected pattern after motion=', detection)
 
   --compute some metric
@@ -1003,8 +1119,8 @@ function filterStatisticalOutliers(cloud)
   --filter.statisticalOutlierRemoval(input, meanK, stddevMulThresh, indices, output, negative, removed_indices)
     local indices = pcl.Indices()
     local removed_indices = pcl.Indices()
-    local meanK = 10
-    local stddevMulThresh = 1
+    local meanK = 5
+    local stddevMulThresh = 0.3
     local output = pcl.PointCloud(pcl.PointXYZRGBA)
     local keepOrganized = true
     print('is input cloud organized? '..#cloud .. ' = ' .. cloud:getWidth() .. ' x ' ..cloud:getHeight())
@@ -1019,7 +1135,7 @@ function filterRadiusOutliers(cloud)
   local indices = pcl.Indices()
   local removeIndices = pcl.Indices()
   local output = pcl.PointCloud(pcl.PointXYZRGBA)
-  local radius = 2
+  local radius = 0.002
   local minNeighbours = 20
   local negative = false
   local keep_organized = true
@@ -1031,6 +1147,26 @@ function filterRadiusOutliers(cloud)
   print('removeIndices size ' ..#removeIndices)
   print('output cloud size ' ..#output)
   return output, removeIndices
+end
+
+
+function HandEye:getStereoPointCloud()
+  --local code = slstudio:initScanStereo("./calibration/current/stereo_cams_CAMAU1639042_CAMAU1710001.xml", slstudio.CAMERA_ROS, "CAMAU1639042", slstudio.CAMERA_ROS, "CAMAU1710001", 300, 2500, true);
+  local code = slstudio:initScanStereo("./calibration/current/StereoCalibration.xml", slstudio.CAMERA_ROS, "CAMAU1639042", slstudio.CAMERA_ROS, "CAMAU1710001", 300, 2500, true);
+  local code, cloud, imageOn, imageOff, imageOnboard, imageShading = slstudio:scanStereo(30); --30
+
+  local points = cloud:pointsXYZ()
+
+  local filtered = pcl.PointCloud(pcl.PointXYZ)
+  local start_time = os.clock()
+  filtered, indices = filterStatisticalOutliers(cloud)
+  local end_time = os.clock()
+  print('filterStatisticalOutliers time (s)=', end_time - start_time)
+
+  slstudio:quitScanStereo()
+  self.debug:publishCloud(cloud, pcloud_frame_id)
+  self.debug:publishCloud(filtered, pcloud_frame_id, 'filtered_cloud')
+  return cloud
 end
 
 
@@ -1086,7 +1222,7 @@ function HandEye:locateCirclePatternInStereoPointCloud()
   local camera_left_id = 'camera_left'
   local camera_right_id = 'camera_right'
   self.debug:publishCloud(cloud_left, cloud_left_frame_id)
-  self.debug_right:publishCloud(cloud_right, cloud_right_frame_id)
+  --self.debug_right:publishCloud(cloud_right, cloud_right_frame_id)
 
 
   local left_img = cv.imread {file_img_left, cv.IMREAD_GRAYSCALE}
@@ -1348,7 +1484,7 @@ end
 
 
 function HandEye:createPickingPose(point_marker_frame)
-  -- the tf will be in the tcp frame of reference, keeping the same orientation
+  -- the tfs will be in the interactive marker's frame of reference, keeping the same orientation
   local H_new_pose_to_tcp = torch.eye(4,4)
   H_new_pose_to_tcp[1][4] = point_marker_frame[1]
   H_new_pose_to_tcp[2][4] = point_marker_frame[2]
@@ -1357,6 +1493,7 @@ function HandEye:createPickingPose(point_marker_frame)
   H_pre_pick_pose[1][4] = H_new_pose_to_tcp[1][4]
   H_pre_pick_pose[2][4] = H_new_pose_to_tcp[2][4]
   H_pre_pick_pose[3][4] = H_new_pose_to_tcp[3][4] - 0.1
+  -- loop to fill in the buffer
   for i=1,20 do
     --print('publishing tf from '..marker_frame_id..' to '..picking_pose_frame_id)
     self.debug:publishTf(H_new_pose_to_tcp, marker_frame_id, picking_pose_frame_id)
@@ -1390,7 +1527,6 @@ function HandEye:moveToMarker()
   print(H_marker_to_world)
 
   --move the end effector there..
-  local velocity_scaling = 1
   local check_for_collisions = true
   H_marker_to_world:set_frame_id(world_frame_id)
   H_marker_to_world:set_child_frame_id(self.tcp_frame_of_reference)
@@ -1401,7 +1537,7 @@ function HandEye:moveToMarker()
   self.debug:publishTf(H_marker_to_world:toTensor(), world_frame_id, desired_tcp_frame_id)
 
 
-  self.move_group:moveL(self.tcp_end_effector_name, H_marker_to_world, velocity_scaling, collision_check)
+  self.move_group:moveL(self.tcp_end_effector_name, H_marker_to_world, self.configuration.velocity_scaling, collision_check)
 
 end
 
@@ -1417,10 +1553,9 @@ function HandEye:moveToMarkerTests()
     return
   end
   --move the end effector there..
-  local velocity_scaling = 1
   local check_for_collisions = true
   print(H_tcp_to_world)
-  self.move_group:moveL(self.tcp_end_effector_name, H_tcp_to_world, velocity_scaling, collision_check)
+  self.move_group:moveL(self.tcp_end_effector_name, H_tcp_to_world, self.configuration.velocity_scaling, collision_check)
 
 end
 
@@ -1432,22 +1567,174 @@ function HandEye:moveToStart()
 end
 
 
-function HandEye:moveToTf(Tf)
+function HandEye:moveLToTf(target_tf)
+
+   self.debug:publishTf(target_tf:toTensor(), target_tf:get_frame_id(), 'desired_tcp')
+  print('published tf. now calling moveL...')
+  -- move there
+  local check_for_collisions = true
+
+  print('self.configuration.velocity_scaling')
+  print(self.configuration.velocity_scaling)
+  --self.move_group:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions)
+  self.xamla_mg:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions)
+
+end
+
+
+function HandEye:readKeySpinning()
+  local function spin()
+      if not ros.ok() then
+          return false, 'ros shutdown requested'
+      else
+          ros.spinOnce()
+          return true
+      end
+  end
+  return xutils.waitKey(spin)
+end
+
+
+function HandEye:moveLToTfSupervised(target_tf)
+
+  self.debug:publishTf(target_tf:toTensor(), target_tf:get_frame_id(), 'desired_tcp')
+  print('published tf. now calling moveLSupervised...')
+  -- move there
+  local check_for_collisions = true
+  local velocity_scaling = 1
+  local do_interaction = true
+
+  local function done_cb(state, result)
+    print('done.')
+    do_interaction = false
+    result_state = state
+    result_payload = result
+  end
+
+
+  local handle = self.xamla_mg:moveLSupervised(self.tcp_end_effector_name, Tf, velocity_scaling, check_for_collisions, done_cb)
+  assert(torch.isTypeOf(handle, motionLibrary.SteppedMotionClient))
+
+  local input
+  while ros.ok() and do_interaction do
+      print('Step through planned trajectory:')
+      print('=====')
+      print("'+'             next position")
+      print("'-'             previous position")
+      print("'ESC' or 'q'    quit")
+      print()
+      input = self:readKeySpinning()
+      if input == '+' then
+        handle:next()
+      elseif input == '-' then
+          handle:previous()
+      elseif string.byte(input) == 27 or input == 'q' then
+          do_interaction = false
+          handle:abort()
+      elseif input == 'f' then
+          print('feedback: ', handle:getFeedback())
+      end
+  end
+
+  local ok, msg = handle:getResult()
+  print(msg)
+  handle:shutdown()
+
+
+end
+
+
+function HandEye:moveToInitPoseSupervised()
+
+  local homeJointStateSDA10d =
+    datatypes.JointValues(
+    datatypes.JointSet(
+        {
+          "torso_joint_b1",
+          "arm_left_joint_1_s",
+          "arm_left_joint_2_l",
+          "arm_left_joint_3_e",
+          "arm_left_joint_4_u",
+          "arm_left_joint_5_r",
+          "arm_left_joint_6_b",
+          "arm_left_joint_7_t",
+          "arm_right_joint_1_s",
+          "arm_right_joint_2_l",
+          "arm_right_joint_3_e",
+          "arm_right_joint_4_u",
+          "arm_right_joint_5_r",
+          "arm_right_joint_6_b",
+          "arm_right_joint_7_t"
+        }
+    ),
+    torch.Tensor {
+      -0.0320090651512146,
+      1.8986761569976807,
+      -0.42934417724609375,
+      -1.8726563453674316,
+      -1.4231847524642944,
+      -1.1743154525756836,
+      -1.6150994300842285,
+      1.17659330368042,
+      -1.8620822429656982,
+      0.8524501323699951,
+      2.7826714515686035,
+      -1.713228702545166,
+      -0.6352958679199219,
+      -0.909939169883728,
+      -0.8238078355789185
+    }
+    )
+    local collision_check = true
+    local handle = self.xamla_mg_both:moveJSupervised(homeJointStateSDA10d, self.configuration.velocity_scaling, collision_check)
+    assert(torch.isTypeOf(handle, motionLibrary.SteppedMotionClient))
+
+    xutils.enableRawTerminal()
+    local input
+    while ros.ok() and do_interaction do
+        print('Step through planned trajectory:')
+        print('=====')
+        print("'+'             next position")
+        print("'-'             previous position")
+        print("'ESC' or 'q'    quit")
+        print()
+        input = readKeySpinning()
+        if input == '+' then
+            handle:next()
+        elseif input == '-' then
+            handle:previous()
+        elseif string.byte(input) == 27 or input == 'q' then
+            do_interaction = false
+            handle:abort()
+        elseif input == 'f' then
+            print('feedback: ', handle:getFeedback())
+        end
+    end
+    xutils.restoreTerminalAttributes()
+
+    local ok, msg = handle:getResult()
+    print(msg)
+    handle:shutdown()
+
+
+end
+
+
+function HandEye:movePToTf(Tf)
 
   -- transform the desired fingertips pose to end effector coordinate frame
   local H_desired = Tf:toTensor() * self.H_fingers_to_tcp:toTensor()
 
 
-  H_desired_stamped = tf.StampedTransform.new()
+  local H_desired_stamped = tf.StampedTransform.new()
   H_desired_stamped:fromTensor(H_desired)
   H_desired_stamped:set_frame_id(world_frame_id)
   H_desired_stamped:set_child_frame_id(self.tcp_frame_of_reference)
   self.debug:publishTf(H_desired_stamped:toTensor(), world_frame_id, 'desired_tcp')
 
   -- move there
-  local velocity_scaling = 1
   local check_for_collisions = true
-  self.move_group:moveL(self.tcp_end_effector_name, H_desired_stamped, velocity_scaling, collision_check)
+  self.move_group:moveP(self.tcp_end_effector_name, H_desired_stamped, self.configuration.velocity_scaling, collision_check)
 
 end
 
@@ -1471,7 +1758,7 @@ function HandEye:pickingPose()
   end
   print('tf '..world_frame_id..' to '..marker_frame_id)
   print(H_marker_to_world)
-  src_cloud = self:getPointCloud()
+  src_cloud = self:getStereoPointCloud()
 
   -- the point cloud is in camera coordinates, transform it to marker_frame_id coordinates
   tf_available, H_cam_to_marker = self.debug:requestTf(pcloud_frame_id, marker_frame_id)
@@ -1498,13 +1785,47 @@ function HandEye:pickingPose()
     return
   end
 
-  self:moveToTf(Tf_pre_picking_pose)
-  self:moveToTf(Tf_picking_pose)
+  self:movePToTf(Tf_pre_picking_pose)
+  self:moveLToTf(Tf_picking_pose)
 
   -- close the gripper and move back to start pose
   self:closeGripper()
-  self:moveToTf(Tf_pre_picking_pose)
+  self:moveLToTf(Tf_pre_picking_pose)
   --self:moveToStart()
+
+end
+
+
+function HandEye:moveToIntMarkerPoseWithPrePick()
+
+  self:openGripper()
+  --request the current pose of int_marker
+  local tf_available, H_marker_to_world_tf = self.debug:requestTf(marker_frame_id, world_frame_id)
+  if not tf_available then
+    print('tf not available! '..world_frame_id..' to '..marker_frame_id)
+    return
+  end
+  print('tf '..world_frame_id..' to '..marker_frame_id)
+  local pick_pose_tf = H_marker_to_world_tf
+  local pre_pick_pose_tf = H_marker_to_world_tf:clone()
+  local pre_pick_tensor = pre_pick_pose_tf:toTensor()
+  pre_pick_tensor[{{3}, {4}}] = pre_pick_tensor[{{3}, {4}}] + 0.1
+  pre_pick_pose_tf:fromTensor(pre_pick_tensor)
+  pre_pick_pose_tf.moveit_msgs_StampedTransform = pick_pose_tf.moveit_msgs_StampedTransform
+  pre_pick_pose_tf.moveit_msgs_StampedPose = pick_pose_tf.moveit_msgs_StampedPose
+  print(H_marker_to_world_tf)
+  print('translation component:', H_marker_to_world_tf:toTensor()[{{1,3}, {4}}])
+
+  print('pre_pick_pose_tf')
+  print(pre_pick_pose_tf)
+  print('pick_pose_tf')
+  print(pick_pose_tf)
+
+  self:moveLToTf(pre_pick_pose_tf)
+  self:moveLToTf(pick_pose_tf)
+  self:closeGripper()
+  self:moveLToTf(pre_pick_pose_tf)
+
 
 end
 
