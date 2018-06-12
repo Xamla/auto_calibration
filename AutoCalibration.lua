@@ -91,7 +91,9 @@ local function initializeGripperServices(self)
   local key = self.configuration.gripper_key
   self.gripper = constructGripper(grippers, key, self.node_handle)
   print('AutoCalibration calling home gripper via gripper:connect()')
-  self.gripper:connect()
+  if self.gripper ~= nil then
+    self.gripper:connect()
+  end
   print('gripper:')
   print(self.gripper)
 end

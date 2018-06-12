@@ -271,19 +271,15 @@ function HandEye:calcPatternPoseRelativeToCam(
   local patternPoseFinal
   local whichCam = whichCam or 'left'
 
-  local R = self.rightLeftCamTrafo[{{1, 3}, {1, 3}}]
-  local T = self.rightLeftCamTrafo[{{1, 3}, {4}}]
-  R = R:double()
-  T = T:double()
+  -- Stereo Rectify:
+  local R = self.rightLeftCamTrafo[{{1, 3}, {1, 3}}]:double()
+  local T = self.rightLeftCamTrafo[{{1, 3}, {4}}]:double()
   local leftR = torch.DoubleTensor(3, 3)
   local rightR = torch.DoubleTensor(3, 3)
   local leftP = torch.DoubleTensor(3, 4)
   local rightP = torch.DoubleTensor(3, 4)
   local Q = torch.DoubleTensor(4, 4)
 
-
-  -- Stereo Rectify:
-  ------------------
   cv.stereoRectify {
     cameraMatrix1 = self.leftCameraMatrix,
     distCoeffs1 = self.leftDistCoeffs,
@@ -292,19 +288,16 @@ function HandEye:calcPatternPoseRelativeToCam(
     imageSize = {imgLeft:size(2), imgLeft:size(1)},
     R = R,
     T = T,
-    R1 = leftR, -- output: rectification transform (rotation matrix) for the first camera.
-    R2 = rightR, -- output rectification transform (rotation matrix) for the second camera.
-    P1 = leftP, -- output
-    P2 = rightP, -- output
-    Q = Q, -- output
+    R1 = leftR,
+    R2 = rightR,
+    P1 = leftP,
+    P2 = rightP,
+    Q = Q,
     flags = 0
   }
-  --alpha = -1, newImageSize = (0, 0)}
 
   -- Undistortion + rectification:
-  --------------------------------
-  local mapAImgLeft,
-    mapBImgLeft =
+  local mapAImgLeft, mapBImgLeft =
     cv.initUndistortRectifyMap {
     cameraMatrix = self.leftCameraMatrix,
     distCoeffs = self.leftDistCoeffs,
@@ -316,8 +309,7 @@ function HandEye:calcPatternPoseRelativeToCam(
   local imgLeftRectUndist =
     cv.remap {src = imgLeft, map1 = mapAImgLeft, map2 = mapBImgLeft, interpolation = cv.INTER_NEAREST}
 
-  local mapAImgRight,
-    mapBImgRight =
+  local mapAImgRight, mapBImgRight =
     cv.initUndistortRectifyMap {
     cameraMatrix = self.rightCameraMatrix,
     distCoeffs = self.rightDistCoeffs,
@@ -329,84 +321,34 @@ function HandEye:calcPatternPoseRelativeToCam(
   local imgRightRectUndist =
     cv.remap {src = imgRight, map1 = mapAImgRight, map2 = mapBImgRight, interpolation = cv.INTER_NEAREST}
 
-
-  -- Possibly enlarge images to be able to click target points correctly:
-  -----------------------------------------------------------------------
-  local rescaleFactor = 1.0 -- 2.0
-  local imgScaleRightRectUndist =
-    cv.resize {
-    imgRightRectUndist,
-    {
-      imgRightRectUndist:size(2) * rescaleFactor,
-      imgRightRectUndist:size(1) * rescaleFactor
-    }
-  }
-  local imgScaleLeftRectUndist =
-    cv.resize {
-    imgLeftRectUndist,
-    {
-      imgLeftRectUndist:size(2) * rescaleFactor,
-      imgLeftRectUndist:size(1) * rescaleFactor
-    }
-  }
-
   cv.imwrite{'./debug/imgLeftRectUndist.png', imgLeftRectUndist}
   cv.imwrite{'./debug/imgRightRectUndist.png', imgRightRectUndist}
 
-  -- Here we only use, that we have height=8 times width=21 points.
-  -- The points' distance is not used here.
-  -- Hence, this implementation is still be applicable with inaccurate pattern print!
-  local circleFinderParams = cv.SimpleBlobDetector_Params {}
-  circleFinderParams.thresholdStep = 5
-  circleFinderParams.minThreshold = 60 -- 60
-  circleFinderParams.maxThreshold = 230
-  circleFinderParams.minRepeatability = 3
-  circleFinderParams.minDistBetweenBlobs = 5
-  circleFinderParams.filterByColor = false --false
-  circleFinderParams.blobColor = 50 --0
-  circleFinderParams.filterByArea = true --true area of the circle in pixels
-  circleFinderParams.minArea = 500 -- 500
-  circleFinderParams.maxArea = 4000
-  circleFinderParams.filterByCircularity = true --true
-  circleFinderParams.minCircularity = 0.6 --0.6
-  circleFinderParams.maxCircularity = 10  --10
-  circleFinderParams.filterByInertia = false --false
-  circleFinderParams.minInertiaRatio = 0.6
-  circleFinderParams.maxInertiaRatio = 10
-  circleFinderParams.filterByConvexity = true --true
-  circleFinderParams.minConvexity = 0.8
-  circleFinderParams.maxConvexity = 10
+  -- Detect all circle points of the pattern in the left/right image
+  local circleFinderParams = patternLocalizer.circleFinderParams
   local blobDetector = cv.SimpleBlobDetector {circleFinderParams}
-
-  --imgScaleLeftRectUndist = imgLeft
-  --imgScaleRightRectUndist = imgRight
-
-  local keypointsLeft = blobDetector:detect {image = imgScaleLeftRectUndist}
-  local keypointsRight = blobDetector:detect {image = imgScaleRightRectUndist}
+  local keypointsLeft = blobDetector:detect {image = imgLeftRectUndist}
+  local keypointsRight = blobDetector:detect {image = imgRightRectUndist}
   print(string.format("keypointsLeft.size: %d", keypointsLeft.size))
-  --print("keypointsLeft.data[1] (size, angle, pt.x, pt.y:")
-  --print(keypointsLeft.data[1].size)
-  --print(keypointsLeft.data[1].angle)
-  --print(keypointsLeft.data[1].pt.x)
-  --print(keypointsLeft.data[1].pt.y)
   print(string.format("keypointsRight.size: %d", keypointsRight.size))
 
   -- Draw keypoints
-  imgKeypointsLeft = imgScaleLeftRectUndist:clone()
-  imgKeypointsRight = imgScaleRightRectUndist:clone()
-
-  cv.drawKeypoints {imgScaleLeftRectUndist, keypointsLeft, imgKeypointsLeft} --Scalar::all(-1), DrawMatchesFlags::DEFAULT );
-  cv.drawKeypoints {imgScaleRightRectUndist, keypointsRight, imgKeypointsRight} --Scalar::all(-1), DrawMatchesFlags::DEFAULT );
-
-
+  local imgKeypointsLeft = imgLeftRectUndist:clone()
+  local imgKeypointsRight = imgRightRectUndist:clone()
+  cv.drawKeypoints {imgLeftRectUndist, keypointsLeft, imgKeypointsLeft}
+  cv.drawKeypoints {imgRightRectUndist, keypointsRight, imgKeypointsRight}
+  -- Show detected (drawn) keypoints
+  --cv.imshow{"Keypoints 1", imgKeypointsLeft}
+  --cv.imshow{"Keypoints 2", imgKeypointsRight}
+  --cv.waitKey{-1}
   cv.imwrite{'./debug/imgKeypointsLeft.png', imgKeypointsLeft}
   cv.imwrite{'./debug/imgKeypointsRight.png', imgKeypointsRight}
 
-  local ok1,
-    circlesGridPointsLeft =
+  local ok1, circlesGridPointsLeft =
     cv.findCirclesGrid {
-    image = imgScaleLeftRectUndist,
-    patternSize = {height = 21, width = 8}, --cols 21, rows 8 patternLocalizer.pattern.width, patternLocalizer.pattern.height
+    image = imgLeftRectUndist,
+    patternSize = { height = patternLocalizer.pattern.height, width = patternLocalizer.pattern.width },
+    --patternSize = {height = 21, width = 8},
     flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
     blobDetector = blobDetector
   }
@@ -414,36 +356,32 @@ function HandEye:calcPatternPoseRelativeToCam(
   if ok1 then
     print('findCirclesGrid found the target on the left image')
   else
-    print('findCirclesGrid DID NOT found the target  on the left image')
+    print('findCirclesGrid DID NOT find the target on the left image')
     return ok1
   end
 
   --for debugging purposes, draw the detected circles and publish the image
   cv.drawChessboardCorners{
-      image = imgScaleLeftRectUndist,
-      patternSize = {height = 21, width = 8}, --cols 21, rows 8 patternLocalizer.pattern.width, patternLocalizer.pattern.height
-      corners =circlesGridPointsLeft,
+      image = imgLeftRectUndist,
+      patternSize = { height = patternLocalizer.pattern.height, width = patternLocalizer.pattern.width },
+      corners = circlesGridPointsLeft,
       patternfound = ok1
   }
   print('drawChessboardCorners')
 
-  --local origin = circlesGridPointsLeft[161][1] --1
-  --local end_x = circlesGridPointsLeft[168][1]  -- 8
-  --local end_y = circlesGridPointsLeft[1][1]   - 161
-
-  local x_0,x_f = 1, 8
-  local y_0, y_f = 1, 161
+  local nPoints = patternLocalizer.pattern.width * patternLocalizer.pattern.height
+  local x_0, x_f = 1, patternLocalizer.pattern.width
+  local y_0, y_f = 1, nPoints - patternLocalizer.pattern.width + 1
 
   local origin = circlesGridPointsLeft[x_0][1]
-  local end_x = circlesGridPointsLeft[x_f][1]
-  local end_y = circlesGridPointsLeft[y_f][1]
-
+  local end_x  = circlesGridPointsLeft[x_f][1]
+  local end_y  = circlesGridPointsLeft[y_f][1]
 
   --paint the x-axis
   cv.arrowedLine{
-      img = imgScaleLeftRectUndist,
+      img = imgLeftRectUndist,
       pt1 = {origin[1], origin[2]},
-      pt2 = {end_y[1], end_y[2]},
+      pt2 = {end_x[1], end_x[2]},
       color = {0,255,0}, -- green
       thickness = 3,
       line_type = 8,
@@ -452,9 +390,9 @@ function HandEye:calcPatternPoseRelativeToCam(
   }
   --paint the y-axis
   cv.arrowedLine{
-      img = imgScaleLeftRectUndist,
+      img = imgLeftRectUndist,
       pt1 = {origin[1], origin[2]},
-      pt2 = {end_x[1], end_x[2]},
+      pt2 = {end_y[1], end_y[2]},
       color = {0,0,255}, -- red
       thickness = 3,
       line_type = 8,
@@ -473,7 +411,7 @@ function HandEye:calcPatternPoseRelativeToCam(
     end
 
     cv.circle{
-        img = imgScaleLeftRectUndist,
+        img = imgLeftRectUndist,
         center = {circlesGridPointsLeft[index][1][1], circlesGridPointsLeft[index][1][2]},
         color = colour,
         radius = 15,
@@ -481,46 +419,34 @@ function HandEye:calcPatternPoseRelativeToCam(
         line_type = 8,
     }
   end
-    --paint the origin
-    --cv.circle{
-     --   img = imgScaleLeftRectUndist,
-    --    center = {origin[1], origin[2]},
-     --   color = {255,255,255}, -- white
-      --  radius = 15,
-     --   thickness = 3,
-     --   line_type = 8,
-    --}
-
 
   print('publishImg')
-  self.debug:publishImg(imgScaleLeftRectUndist, 'pattern_detection_left')
-  self.debug:publishImg(imgScaleRightRectUndist, 'pattern_detection_right')
-  --cv.imwrite{'./debug/pattern-detection.png', imgScaleLeftRectUndist}
+  self.debug:publishImg(imgLeftRectUndist, 'pattern_detection_left')
+  self.debug:publishImg(imgRightRectUndist, 'pattern_detection_right')
+  --cv.imwrite{'./debug/pattern-detection.png', imgLeftRectUndist}
 
-  local ok2,
-    circlesGridPointsRight =
+  local ok2, circlesGridPointsRight =
     cv.findCirclesGrid {
-    image = imgScaleRightRectUndist,
-    patternSize = {height = 21, width = 8}, --cols 21, rows 8 patternLocalizer.pattern.width, patternLocalizer.pattern.height
+    image = imgRightRectUndist,
+    patternSize = { height = patternLocalizer.pattern.height, width = patternLocalizer.pattern.width },
     flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
     blobDetector = blobDetector
   }
-  print('findCirclesGrid imgScaleRightRectUndist')
+  print('findCirclesGrid imgRightRectUndist')
   print(string.format("ok1: %s", ok1))
   print(string.format("ok2: %s\n", ok2))
 
   local ok = ok1 and ok2
   if ok then
-
-    -- Save 2d grid points. Don't forget to divide them by the rescale factor!
-    local nPoints = 168
-    leftProjPoints = torch.DoubleTensor(2, nPoints) -- 2D coordinates (x,y) x #Points
-    rightProjPoints = torch.DoubleTensor(2, nPoints)
+    -- Save 2d grid points.
+    local nPoints = patternLocalizer.pattern.width * patternLocalizer.pattern.height
+    local leftProjPoints = torch.DoubleTensor(2, nPoints) -- 2D coordinates (x,y) x #Points
+    local rightProjPoints = torch.DoubleTensor(2, nPoints)
     for i = 1, nPoints do
-      leftProjPoints[1][i] = circlesGridPointsLeft[i][1][1] / rescaleFactor
-      leftProjPoints[2][i] = circlesGridPointsLeft[i][1][2] / rescaleFactor
-      rightProjPoints[1][i] = circlesGridPointsRight[i][1][1] / rescaleFactor
-      rightProjPoints[2][i] = circlesGridPointsRight[i][1][2] / rescaleFactor
+      leftProjPoints[1][i] = circlesGridPointsLeft[i][1][1]
+      leftProjPoints[2][i] = circlesGridPointsLeft[i][1][2]
+      rightProjPoints[1][i] = circlesGridPointsRight[i][1][1]
+      rightProjPoints[2][i] = circlesGridPointsRight[i][1][2]
     end
 
     local resulting4DPoints = torch.DoubleTensor(4, nPoints) -- 4 x #Points
@@ -529,140 +455,88 @@ function HandEye:calcPatternPoseRelativeToCam(
     ---------------------
     cv.triangulatePoints {leftP, rightP, leftProjPoints, rightProjPoints, resulting4DPoints}
 
-    --print("Resulting homogeneous 4D points:")
-    --print(resulting4DPoints)
-
-    local resulting3DPoints = torch.DoubleTensor(nPoints, 3) -- #Points x 3
+    local resulting3DPoints = torch.DoubleTensor(nPoints, 3)
     for i = 1, nPoints do
       resulting3DPoints[i][1] = resulting4DPoints[1][i] / resulting4DPoints[4][i]
       resulting3DPoints[i][2] = resulting4DPoints[2][i] / resulting4DPoints[4][i]
       resulting3DPoints[i][3] = resulting4DPoints[3][i] / resulting4DPoints[4][i]
     end
-    --print("Corresponding 3D points:")
-    --print(resulting3DPoints)
 
     local pointsInCamCoords = torch.DoubleTensor(nPoints, 3)
     if whichCam == "left" then
-      --print("Points in leftCam coordinates:")
-      --print(pointsInCamCoords)
       for i = 1, nPoints do
         pointsInCamCoords[i] = torch.inverse(leftR) * resulting3DPoints[i]
       end
     else
-      --print("Points in rightCam coordinates:")
-      --print(pointsInCamCoords)
       for i = 1, nPoints do
         pointsInCamCoords[i] = torch.inverse(rightR) * resulting3DPoints[i]
       end
     end
 
-    -- Generate plane through detected 3d points:
-    ---------------------------------------------
-    -- Es wird eine Ebene durch die mit "cv.triangulatePoints" bestimmten 3D-Punkte gelegt/gefitted.
-    -- Normale auf die Ebene bestimmen und normieren -> z-Einheitsvektor des Patternkoordinatensystems.
-    -- Vektor durch die linken  8 Rand-Pattern-Punkte bestimmen und normieren -> x-Einheitsvektor ...
-    -- Vektor durch die oberen 11 Rand-Pattern-Punkte bestimmen und normieren -> y-Einheitsvektor ...
-    -- (Orthogonalität der Einheitsvektoren zueinander mittels Skalarprodukt überprüfen.)
-    -- Transformation des Patternkoordinatensystems in das Kamera-Koordinatensystem.
-    -- Die Transformationsmatrix setzt sich hierbei zusammen aus den drei zuvor bestimmten Einheitsvektoren
-    -- des Patternkoordinatensystems und dem Stuetzvektor (linker, oberer Eckpunkt des Patterns).
-
-    -- 1.) Plane fit:
-    -- https://stackoverflow.com/questions/1400213/3d-least-squares-plane
-    -- http://www.ilikebigbits.com/blog/2015/3/2/plane-from-points
-
-    -- Lösung mit Pseudoinverse:
-    ----------------------------
-    -- siehe: https://stackoverflow.com/questions/1400213/3d-least-squares-plane
-    -- letzter längerer Kommentar
-    A = torch.DoubleTensor(nPoints, 3) -- 2-dim. tensor of size 168 x 3
-    b = torch.DoubleTensor(nPoints)    -- 1-dim. tenosr of size 168
+    -- Generate plane through detected 3d points to get the transformation
+    ----------------------------------------------------------------------
+    -- of the pattern into the coordinatesystem of the camera:
+    ----------------------------------------------------------
+    -- Plane fit with pseudo inverse:
+    local A = torch.DoubleTensor(nPoints, 3) -- 2-dim. tensor of size nPoints x 3
+    local b = torch.DoubleTensor(nPoints)    -- 1-dim. tensor of size nPoints
     for i = 1, nPoints do
       A[i][1] = pointsInCamCoords[i][1]
       A[i][2] = pointsInCamCoords[i][2]
       A[i][3] = 1.0
       b[i] = pointsInCamCoords[i][3]
     end
-
-    -- Calculate x = A^-1 * b = (A^T A)^-1 * A^T * b (mit Pseudoinverser von A)
-    At = A:transpose(1, 2)
-    x = torch.mv(torch.mm(torch.inverse(torch.mm(At, A)), At), b)
-    --print("x:")
-    --print(x)
-    --print(string.format("E: %f x + %f y + %f = z", x[1], x[2], x[3]))
-    --print("bzw.:")
-    --print(string.format("E: %f x + %f y + (-1) z + %f = 0\n", x[1], x[2], x[3]))
-
-    -- 2.) Bestimmung der Normale auf die Ebene (-> z-Achse des Patternkoordinatensystems):
-    --print("Die Normale setzt sich aus den Koeffizienten von x, y und z zusammen.")
-    n = torch.DoubleTensor(3)
+    -- Calculate x = A^-1 * b = (A^T A)^-1 * A^T * b (with pseudo inverse of A)
+    local At = A:transpose(1, 2)
+    local x = torch.mv(torch.mm(torch.inverse(torch.mm(At, A)), At), b)
+    
+    -- Determine z-axis as normal on plane:
+    local n = torch.DoubleTensor(3)
     n[1] = x[1]
     n[2] = x[2]
     n[3] = -1.0
-    --print("n:")
-    --print(n)
-    z_unit_vec = torch.div(n, torch.norm(n))
-    --print("z_unit_vec:")
-    --print(z_unit_vec)
+    local z_unit_vec = torch.div(n, torch.norm(n))
+    
+    -- Determine x-axis along left boundary points of the pattern
+    local x_direction = pointsInCamCoords[x_f] - pointsInCamCoords[x_0]
+    local x_unit_vec = torch.div(x_direction, torch.norm(x_direction))
 
-    -- 3.) Bestimmung der x-Achse entlang der linken 8 Rand-Pattern-Punkte und
-    --     bestimmung der y-Achse entlang der oberen 11 Rand-Pattern-Punkte:
-    -- Line-fit oder einfach Verbindungslinie zwischen den äußeren beiden Randpunkten
-    --local x_0,x_f = 1, 8
-    --local y_0, y_f = 1, 161
-
-    x_direction = pointsInCamCoords[x_f] - pointsInCamCoords[x_0]
-    x_unit_vec = torch.div(x_direction, torch.norm(x_direction))
-    y_direction = pointsInCamCoords[y_f] - pointsInCamCoords[y_0]
-    y_unit_vec = torch.div(y_direction, torch.norm(y_direction))
+    -- Determine y-axis along top boundary points of the pattern:
+    local y_direction = pointsInCamCoords[y_f] - pointsInCamCoords[y_0]
+    local y_unit_vec = torch.div(y_direction, torch.norm(y_direction))
 
     -- Check, whether the normal vector z_unit_vec points into the correct direction.
     local cross_product = torch.DoubleTensor(3)
-    --cross_product[1] = x_unit_vec[2] * y_unit_vec[3] - x_unit_vec[3] * y_unit_vec[2]
-    --cross_product[2] = x_unit_vec[3] * y_unit_vec[1] - x_unit_vec[1] * y_unit_vec[3]
-    --cross_product[3] = x_unit_vec[1] * y_unit_vec[2] - x_unit_vec[2] * y_unit_vec[1]
     cross_product = torch.cross(x_unit_vec, y_unit_vec)
     cross_product = torch.div(cross_product, torch.norm(cross_product))
-    if (torch.sign(z_unit_vec) * torch.sign(cross_product) ~= 3) then
+    if z_unit_vec * cross_product < 0.0 then
       z_unit_vec = -1.0 * z_unit_vec
     end
 
-    --print("z_unit_vec is correct.")
-    --print("It's the normal to the plane fitted through all 168 points.")
-    --print("x_unit_vec * z_unit_vec has to be zero.")
-    --print("Map x_unit_vec onto plane:")
+    -- x_unit_vec * z_unit_vec has to be zero.
+    -- Map x_unit_vec onto plane.
     local new_x_unit_vec = x_unit_vec - x_unit_vec * z_unit_vec * z_unit_vec
-    if (torch.sign(new_x_unit_vec) * torch.sign(x_unit_vec) ~= 3) then
+    if new_x_unit_vec * x_unit_vec < 0.0 then
       new_x_unit_vec = -1.0 * new_x_unit_vec
     end
-    --print("New x_unit_vec:")
-    --print(new_x_unit_vec)
-    --print("new_x_unit_vec * z_unit_vec:")
-    --print(new_x_unit_vec * z_unit_vec)
-
-
+    
+    -- Determine new y_unit_vec as cross product of x_unit_vec and z_unit_vec:
     local new_y_unit_vec = torch.cross(new_x_unit_vec, z_unit_vec)
-    if (torch.sign(new_y_unit_vec) * torch.sign(y_unit_vec) ~= 3) then
+    if new_y_unit_vec * y_unit_vec < 0.0 then
       new_y_unit_vec = -1.0 * new_y_unit_vec
     end
-    --print("New y_unit_vec:")
-    --print(new_y_unit_vec)
-    --print("New y_unit_vec * z_unit_vec:")
-    --print(new_y_unit_vec * z_unit_vec)
-    --print("New y_unit_vec * new x_unit_vec:")
-    --print(new_y_unit_vec * new_x_unit_vec)
-
+    
     -- Transform pattern coordinate system into camera coordinate system:
     -- M_B->A = (x_unit_vec, y_unit_vec, z_unit_vec, support vector)
     patternPoseFinal = torch.DoubleTensor(4, 4):zero()
     patternPoseFinal[{{1, 3}, {1}}] = new_x_unit_vec
     patternPoseFinal[{{1, 3}, {2}}] = new_y_unit_vec
     patternPoseFinal[{{1, 3}, {3}}] = z_unit_vec
-    patternPoseFinal[{{1, 3}, {4}}] = pointsInCamCoords[x_0] -- = Stuetzvektor pointsInCamCoords[1]
+    patternPoseFinal[{{1, 3}, {4}}] = pointsInCamCoords[x_0] -- = support vector
     patternPoseFinal[4][4] = 1
 
   else
-    print("Pattern not found.")
+    print("PATTERN NOT FOUND!!!")
     patternPoseFinal = torch.eye(4)
   end
 

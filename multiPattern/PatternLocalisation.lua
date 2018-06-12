@@ -418,14 +418,14 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   local ok1, circlesGridPointsLeft =
     cv.findCirclesGrid {
     image = imgLeftRectUndist,
-    patternSize = {height = 21, width = 8},
+    patternSize = {height = self.pattern.height, width = self.pattern.width},
     flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
     blobDetector = blobDetector
   }
   local ok2, circlesGridPointsRight =
     cv.findCirclesGrid {
     image = imgScaleRightRectUndist,
-    patternSize = {height = 21, width = 8},
+    patternSize = {height = self.pattern.height, width = self.pattern.width},
     flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
     blobDetector = blobDetector
   }
