@@ -8,10 +8,12 @@
 * Remove old auto_calibration folder from Rosvita
 * Unpack uploaded auto_calibration folder: ``tar -xzvf auto_calibration.tgz`` (in Rosvita)
 * Rename **results_german_\<date\>** into **calibration** (in Rosvita)
-  * For **UR5** take **results_german_22_3_2018**
-  * For **SDA10D** take **results_german_23_5_2018** (pattern fixed with tape onto the wsg gripper connected to the sda) or **results_german_22_5_2018** (pattern fixed between gripper jaws of the robotiq gripper connected to the ur5 and presented to the sda cameras)
+  * For **UR5** take **results_german_22_3_2018** <br />
+    (Or **results_german_22_5_2018** (pattern fixed between gripper jaws of the robotiq gripper connected to the ur5 and presented to the cameras at the sda torso); yields no good results -> perhaps the torso with the cameras moved?)
+  * For **SDA10D** take **results_german_23_5_2018** (pattern fixed with tape onto the wsg gripper connected to the sda) 
 * Run the calibration: ``th runCalibration.lua -cfg <stereo_config>.t7``.
-  * For UR5: ``th runCalibration.lua -cfg calibration/configurationStereo.t7`` or ``th runCalibration.lua -cfg configurationUR5.t7``
+  * For UR5: ``th runCalibration.lua -cfg calibration/configurationStereo.t7`` <br /> 
+    (Or ``th runCalibration.lua -cfg configurationUR5.t7``, if you take **results_german_22_5_2018** with the extern "CAMAU" cameras.)
   * For SDA10D: ``th runCalibration.lua -cfg configurationYaskawa.t7``
 * Then press:
   * a (Calibrate camera)
