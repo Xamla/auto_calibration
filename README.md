@@ -9,7 +9,7 @@
 * Unpack uploaded auto_calibration folder: ``tar -xzvf auto_calibration.tgz`` (in Rosvita)
 * Rename **results_german_\<date\>** into **calibration** (in Rosvita)
   * For **UR5** take **results_german_22_3_2018**
-  * For **SDA10D** take **results_german_23_5_2018** (pattern fixed with tape onto the gripper) or **results_german_22_5_2018** (pattern fixed between gripper jaws)
+  * For **SDA10D** take **results_german_23_5_2018** (pattern fixed with tape onto the wsg gripper connected to the sda) or **results_german_22_5_2018** (pattern fixed between gripper jaws of the robotiq gripper connected to the ur5 and presented to the sda cameras)
 * Run the calibration: ``th runCalibration.lua -cfg <stereo_config>.t7``.
   * For UR5: ``th runCalibration.lua -cfg calibration/configurationStereo.t7`` or ``th runCalibration.lua -cfg configurationUR5.t7``
   * For SDA10D: ``th runCalibration.lua -cfg configurationYaskawa.t7``
