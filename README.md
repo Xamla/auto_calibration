@@ -8,11 +8,12 @@
 * Remove old auto_calibration folder from Rosvita
 * Unpack uploaded auto_calibration folder: ``tar -xzvf auto_calibration.tgz`` (im Rosvita-Terminal)
 * Rename **results_german_22_3_2018** into **calibration** (in Rosvita)
-* Run the calibration with already captured images: ``th runCalibration.lua -cfg calibration/configurationStereo.t7``
-a (Calibrate camera)
-s (Save calibration)!!!
-b (Hand-eye calibration)
-e (Evaluate calibration) Is not possible without robot movement!!!
+* Run the calibration: ``th runCalibration.lua -cfg calibration/configurationStereo.t7``.
+  Then press:
+  * a (Calibrate camera)
+  * s (Save calibration)!!!
+  * b (Hand-eye calibration)
+  * e (Evaluate calibration) Is not possible without robot movement!!!
 
 ### Some notes about the result folder structure:
 * Captured images will be stored in ``./calibration/capture/``
