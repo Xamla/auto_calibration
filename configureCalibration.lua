@@ -75,11 +75,12 @@ local configuration = {
   base_poses = {},
   capture_poses = {},
   gripper_key = '',
+  camera_location_mode = 'extern'
 }
 
 
 local function setGripper(key)
-  configuration.gripper_key =key
+  configuration.gripper_key = key
   printf('New selected gripper key: %s', configuration.gripper_key)
   prompt:anyKey()
 end
@@ -467,12 +468,30 @@ local function setCalibrationMode(mode)
 end
 
 
+local function setCameraLocation(location)
+  configuration.camera_location_mode = location
+  printf('New camera location mode: %s', configuration.camera_location_mode)
+  prompt:anyKey()
+end
+
+
 local function selectCalibrationMode()
   local menu_options =
   {
     { '1', 'Single camera calibration', function() setCalibrationMode(CalibrationMode.SingleCamera) return false end },
     { '2', 'Stereo rig calibraiton', function() setCalibrationMode(CalibrationMode.StereoRig) return false end },
     { '3', 'Structured light single camera calibration', function() setCalibrationMode(CalibrationMode.StructuredLightSingleCamera) return false end },
+    { 'ESC', 'Return to main menu', false },
+  }
+  prompt:showMenu('Main Menu', menu_options)
+end
+
+
+local function selectCameraLocation()
+  local menu_options =
+  {
+    { '1', 'Extern camera setup', function() setCameraLocation('extern') return false end },
+    { '2', 'Onboard camera setup', function() setCameraLocation('onboard') return false end },
     { 'ESC', 'Return to main menu', false },
   }
   prompt:showMenu('Main Menu', menu_options)
@@ -636,6 +655,7 @@ local function showMainMenu()
       { '7', string.format('Set velocity scaling (%f)', configuration.velocity_scaling), setVelocityScaling },
       { '8', 'Actuator menu', showActuatorMenu },
       { '9', 'Dump configuration', dumpConfiguration },
+      { 'c', string.format('Camera localtion selection (\'%s\' camera setup)', configuration.camera_location_mode), selectCameraLocation },
       { 'g', string.format('Gripper selection (%s)',configuration.gripper_key) , selectGripper },
       { 's', 'Save configuration',  saveConfiguration },
       { 'ESC', 'Quit', false },

@@ -295,6 +295,16 @@ function AutoCalibration:openGripper()
     print('Need to initialize the gripper')
   end
 end
+	
+	
+function AutoCalibration:homeGripper()
+  if self.gripper ~= nil then
+    print('Homeing gripper')
+    self.gripper:home()
+  else
+    print('Need to initialize the gripper')
+  end
+end
 
 
 local function captureImage(self, i, camera_configuration, output_directory)
