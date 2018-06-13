@@ -999,51 +999,43 @@ end
 
 
 function HandEye:getStereoPointCloud()
-  --local code = slstudio:initScanStereo("./calibration/current/stereo_cams_CAMAU1639042_CAMAU1710001.xml", slstudio.CAMERA_ROS, "CAMAU1639042", slstudio.CAMERA_ROS, "CAMAU1710001", 300, 2500, true);
-  local code = slstudio:initScanStereo("./calibration/current/StereoCalibration.xml", slstudio.CAMERA_ROS, "CAMAU1639042", slstudio.CAMERA_ROS, "CAMAU1710001", 300, 2500, true);
-  local code, cloud, imageOn, imageOff, imageOnboard, imageShading = slstudio:scanStereo(30); --30
-
-  local points = cloud:pointsXYZ()
-
-  local filtered = pcl.PointCloud(pcl.PointXYZ)
-  local start_time = os.clock()
-  filtered, indices = filterStatisticalOutliers(cloud)
-  local end_time = os.clock()
-  print('filterStatisticalOutliers time (s)=', end_time - start_time)
-
-  slstudio:quitScanStereo()
-  self.debug:publishCloud(cloud, pcloud_frame_id)
-  self.debug:publishCloud(filtered, pcloud_frame_id, 'filtered_cloud')
-  return cloud
+  if slstudio ~= nil then
+    local code = slstudio:initScanStereo("./calibration/current/StereoCalibration.xml", slstudio.CAMERA_ROS, self.left_camera_serial, slstudio.CAMERA_ROS, self.right_camera_serial, 300, 2500, true);
+    local code, cloud, imageOn, imageOff, imageOnboard, imageShading = slstudio:scanStereo(30)
+    local points = cloud:pointsXYZ()
+    local filtered = pcl.PointCloud(pcl.PointXYZ)
+    local start_time = os.clock()
+    filtered, indices = filterStatisticalOutliers(cloud)
+    local end_time = os.clock()
+    print('filterStatisticalOutliers time (s)=', end_time - start_time)
+    slstudio:quitScanStereo()
+    self.debug:publishCloud(cloud, pcloud_frame_id)
+    self.debug:publishCloud(filtered, pcloud_frame_id, 'filtered_cloud')
+    return cloud
+  else
+    print('Cannot get stereo point cloud. Package \"slstudio\" is missing.')
+  end
 end
 
 
 function HandEye:getPointCloud()
-
-  -- we should get the serial of the left camera dynamically
-  local code = slstudio:initScan("./calibration/current/sls.xml", slstudio.CAMERA_ROS, self.left_camera_serial, 100, 3000, false);  --300, 2500, true);
-  --local code = slstudio:initScan("./calibration/current/sls.xml", slstudio.CAMERA_ROS, "CAMAU1639042", 100, 3000, false);  --300, 2500, true);
-  local code, cloud, imageOn, imageOff, imageOnboard, imageShading = slstudio:scan(20); --20
-
-  local points = cloud:pointsXYZ()
-  local filtered = pcl.PointCloud(pcl.PointXYZ)
-  --points:mul(.001)
-  local start_time = os.clock()
-  filtered, indices = filterStatisticalOutliers(cloud)
-  local end_time = os.clock()
-  print('filterStatisticalOutliers time (s)=', end_time - start_time)
-
-  --start_time = os.clock()
-  --filtered, indices = filterRadiusOutliers(cloud)
-  --end_time = os.clock()
-  --print('filterRadiusOutliers time (s)=', end_time - start_time)
-
-
-  --print("libslstudio returned: ", code, cloud)
-  slstudio:quitScan()
-  --self.debug:publishCloud(cloud, pcloud_frame_id)
-  self.debug:publishCloud(filtered, pcloud_frame_id)
-  return filtered
+  if slstudio ~= nil then
+    local code = slstudio:initScan("./calibration/current/sls.xml", slstudio.CAMERA_ROS, self.left_camera_serial, 100, 3000, false)  -- 300, 2500, true);
+    local code, cloud, imageOn, imageOff, imageOnboard, imageShading = slstudio:scan(20)
+    local points = cloud:pointsXYZ()
+    local filtered = pcl.PointCloud(pcl.PointXYZ)
+    --points:mul(.001)
+    local start_time = os.clock()
+    filtered, indices = filterStatisticalOutliers(cloud)
+    local end_time = os.clock()
+    print('filterStatisticalOutliers time (s)=', end_time - start_time)
+    --print("libslstudio returned: ", code, cloud)
+    slstudio:quitScan()
+    self.debug:publishCloud(filtered, pcloud_frame_id)
+    return filtered
+  else
+    print('Cannot get point cloud. Package \"slstudio\" is missing.')
+  end
 end
 
 
