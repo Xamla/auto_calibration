@@ -124,11 +124,11 @@ function PatternLocalisation:setPatternIDdictionary(dict)
 end
 
 function PatternLocalisation:setCamIntrinsics(camCalib)
-  self.camIntrinsics = camCalib:clone()
+  self.camIntrinsics = camCalib
 end
 
 function PatternLocalisation:setStereoCalibration(stereoCalib)
-  self.stereoCalibration = stereoCalib:clone()
+  self.stereoCalibration = stereoCalib
 end
 
 function PatternLocalisation:generateDefaultCircleFinderParams()
@@ -334,16 +334,17 @@ function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, d
 end
 
 function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam, doDebug, imgShowInput)
-  local doDebug = doDebug or false
   local whichCam = whichCam or "left"
+  local doDebug = doDebug or false
+  local imgShowInput = imgShowInput or false
   local camPoseFinal
 
-  stereoCalibration = self.stereoCalibration
-  local leftCamMat = stereoCalib.intrinsicLeftCam
-  local rightCamMat = stereoCalib.intrinsicRightCam
-  local leftDistCoeffs = stereoCalib.distLeftCam
-  local rightDistCoeffs = stereoCalib.distRightCam
-  local rightLeftCamTrafo = stereoCalib.trafoLeftCamRightCam
+  stereoCalib = self.stereoCalibration
+  local leftCamMat = stereoCalib.camLeftMatrix --stereoCalib.intrinsicLeftCam
+  local rightCamMat = stereoCalib.camRightMatrix --stereoCalib.intrinsicRightCam
+  local leftDistCoeffs = stereoCalib.camLeftDistCoeffs --stereoCalib.distLeftCam
+  local rightDistCoeffs = stereoCalib.camRightDistCoeffs --stereoCalib.distRightCam
+  local rightLeftCamTrafo = stereoCalib.trafoLeftToRightCam --stereoCalib.trafoLeftCamRightCam
 
   -- Stereo Rectify:
   local R = rightLeftCamTrafo[{{1, 3}, {1, 3}}]:double()
@@ -355,9 +356,9 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   local Q = torch.DoubleTensor(4, 4)
 
   cv.stereoRectify {
-    cameraMatrix1 = leftCameraMatrix,
+    cameraMatrix1 = leftCamMat,
     distCoeffs1 = leftDistCoeffs,
-    cameraMatrix2 = rightCameraMatrix,
+    cameraMatrix2 = rightCamMat,
     distCoeffs2 = rightDistCoeffs,
     imageSize = {imgLeft:size(2), imgLeft:size(1)},
     R = R,
@@ -373,7 +374,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   -- Undistortion + rectification:
   local mapAImgLeft, mapBImgLeft =
     cv.initUndistortRectifyMap {
-    cameraMatrix = leftCameraMatrix,
+    cameraMatrix = leftCamMat,
     distCoeffs = leftDistCoeffs,
     R = leftR,
     newCameraMatrix = leftP,
@@ -385,7 +386,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
 
   local mapAImgRight, mapBImgRight =
     cv.initUndistortRectifyMap {
-    cameraMatrix = rightCameraMatrix,
+    cameraMatrix = rightCamMat,
     distCoeffs = rightDistCoeffs,
     R = rightR,
     newCameraMatrix = rightP,
@@ -397,8 +398,6 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
 
   -- Detect all circle points of the pattern in the left/right image
   local circleFinderParams = self.circleFinderParams
-  circleFinderParams.minArea = 500 --  200
-  circleFinderParams.maxArea = 4000 -- 1000
   local blobDetector = cv.SimpleBlobDetector {circleFinderParams}
   local keypointsLeft = blobDetector:detect {image = imgLeftRectUndist}
   local keypointsRight = blobDetector:detect {image = imgRightRectUndist}
@@ -424,7 +423,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   }
   local ok2, circlesGridPointsRight =
     cv.findCirclesGrid {
-    image = imgScaleRightRectUndist,
+    image = imgRightRectUndist,
     patternSize = {height = self.pattern.height, width = self.pattern.width},
     flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
     blobDetector = blobDetector

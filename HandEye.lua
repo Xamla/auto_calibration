@@ -53,6 +53,7 @@ patternLocalizer:setPatternData(
   DEFAULT_CIRCLE_PATTERN_GEOMETRY[3]  --pointDist = 0.05
 )
 
+
 local handEye = {}
 
 
@@ -141,13 +142,17 @@ function HandEye:loadStereoCalibration(stereo_calib_fn)
   -- check first if there is an existing stereo calibration file
   if path.exists(stereo_calib_fn) then
     local stereoCalib = torch.load(stereo_calib_fn)
+    patternLocalizer:setStereoCalibration(stereoCalib)
     self.leftCameraMatrix = stereoCalib.camLeftMatrix --stereoCalib.intrinsicLeftCam
     self.rightCameraMatrix = stereoCalib.camRightMatrix --stereoCalib.intrinsicRightCam
     self.leftDistCoeffs = stereoCalib.camLeftDistCoeffs --stereoCalib.distLeftCam
     self.rightDistCoeffs =  stereoCalib.camRightDistCoeffs --stereoCalib.distRightCam
     self.rightLeftCamTrafo = stereoCalib.trafoLeftToRightCam  --stereoCalib.trafoLeftCamRightCam
     print('read stereo calibration file '..stereo_calib_fn)
-    print('leftCameraMatrix=', self.leftCameraMatrix)
+    --print("stereo calibration:")
+    --print(stereoCalib)
+    --print("patternLocalizer.stereoCalibration:")
+    --print(patternLocalizer.stereoCalibration)
   end
 end
 
@@ -207,41 +212,6 @@ function HandEye:getEndEffectors(move_groups)
   end
 
   return rc
-end
-
-
-
-function HandEye:closeGripper()
-
-  local width = 0.002 --0.0115
-  local force = 60
-  local speed = 1.0
-  local acceleration = 0.1
-  local execute_timeout_in_s = 5
-  -- this funtion should use move or release depending on gripper state -> open the gripper
-  if self.gripper ~= nil then
-    self.gripper:close(width, force, speed,acceleration,execute_timeout_in_s )
-  else
-    print('Need to initialize the gripper')
-  end
-
-end
-
-
-function HandEye:openGripper()
-
-  local width = 0.0615
-  local force = 60
-  local speed = 1.0
-  local acceleration = 0.1
-  local execute_timeout_in_s = 5
-  -- this funtion should use move or release depending on gripper state -> open the gripper
-  if self.gripper ~= nil then
-    self.gripper:open(width, force, speed,acceleration,execute_timeout_in_s )
-  else
-    print('Need to initialize the gripper')
-  end
-
 end
 
 
@@ -559,7 +529,6 @@ function HandEye:calibrate(imgData)
   print('HandEye:calibrate loading calibration file: '..self.stereo_calibration_path)
   self:loadStereoCalibration(self.stereo_calibration_path)
 
-
   local output_path = path.join(self.configuration.output_directory, self.calibration_folder_name)
   -- the <calibration_name> folder has to exist or be created to be able to store the hand eye matrices
   os.execute('mkdir -p ' .. output_path)
@@ -606,13 +575,14 @@ function HandEye:calibrate(imgData)
     print(imgLeft:size(2))
     print(imgLeft:size(3))
 
-    local ok,
-      patternPoseRelToCam =
-      self:calcPatternPoseRelativeToCam(
-      imgLeft,
-      imgRight,
-      'left'
-    )
+    --local ok,
+    --  patternPoseRelToCam =
+    --  self:calcPatternPoseRelativeToCam(
+    --  imgLeft,
+    --  imgRight,
+    --  'left'
+    --)
+    local ok, patternPoseRelToCam = patternLocalizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left')
 
     --alternatively, use the monocular approach
     --local patternPoseRelToCam, points3d = patternLocalizer:calcCamPose(imgLeft, leftCameraMatrix, patternLocalizer.pattern)
@@ -766,10 +736,11 @@ function HandEye:detectPattern()
   left_img = self:captureImageNoWait(left_camera_config)
   right_img = self:captureImageNoWait(right_camera_config)
 
-  local ok, pattern_pose = self:calcPatternPoseRelativeToCam(
-    left_img,
-    right_img,
-    'left')
+  --local ok, pattern_pose = self:calcPatternPoseRelativeToCam(
+  --  left_img,
+  --  right_img,
+  --  'left')
+  local ok, pattern_pose = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
   if not ok then
     self.debug:publishImg(left_img)
     return nil
@@ -804,10 +775,12 @@ function HandEye:movePatternTests()
   right_img = self:captureImageNoWait(right_camera_config)
   self.debug:publishImg(left_img)
 
-  local ok, pattern_pose = self:calcPatternPoseRelativeToCam(
-    left_img,
-    right_img,
-    'left')
+  --local ok, pattern_pose = self:calcPatternPoseRelativeToCam(
+  --  left_img,
+  --  right_img,
+  --  'left')
+  local ok, pattern_pose = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+
   self.debug:publishTf(pattern_pose,'camera_left', 'pattern')
 end
 
@@ -874,11 +847,11 @@ function HandEye:movePattern()
   right_img = self:captureImageNoWait(right_camera_config)
   self.debug:publishImg(left_img)
 
-  local ok, pattern_pose_cam_coords = self:calcPatternPoseRelativeToCam(
-    left_img,
-    right_img,
-    'left')
-
+  --local ok, pattern_pose_cam_coords = self:calcPatternPoseRelativeToCam(
+  --  left_img,
+  --  right_img,
+  --  'left')
+  local ok, pattern_pose_cam_coords = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
   if not ok then
     print('pattern not found!')
     return ok, pattern_pose_cam_coords
@@ -919,8 +892,9 @@ function HandEye:movePattern()
     self.debug:publishTf(pose_tcp,self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
     self.debug:publishTf(pose_tcp,self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
 
-    local check_for_collisions = true
-    self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check)
+    local collision_check = true
+    self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check) --  aendert sich noch!!!
+    --self.end_effector:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check)
 
     return ok, self.predicted_pattern_pose_cam_coords
 
@@ -1108,10 +1082,11 @@ function HandEye:locateCirclePatternInStereoPointCloud()
   --self:debugPatternDetection(right_img_bgr)
   --self:debugPatternDetection(left_img_bgr)
 
-  local ok, pattern_pose_stereo = self:calcPatternPoseRelativeToCam(
-    left_img_bgr,
-    right_img_bgr,
-    'left')
+  --local ok, pattern_pose_stereo = self:calcPatternPoseRelativeToCam(
+  --  left_img_bgr,
+  --  right_img_bgr,
+  --  'left')
+  local ok, pattern_pose_stereo = patternLocalizer:calcCamPoseViaPlaneFit(left_img_bgr, right_img_bgr, 'left')
 
   print(' self.leftDistCoeffs =',  self.leftDistCoeffs)
   print(' self.leftCameraMatrix =',  self.leftCameraMatrix)
@@ -1410,8 +1385,9 @@ function HandEye:moveToMarker()
   self.debug:publishTf(H_marker_to_world:toTensor(), world_frame_id, desired_tcp_frame_id)
   self.debug:publishTf(H_marker_to_world:toTensor(), world_frame_id, desired_tcp_frame_id)
 
-
-  self.move_group:moveL(self.tcp_end_effector_name, H_marker_to_world, self.configuration.velocity_scaling, collision_check)
+  local collision_check = true
+  self.move_group:moveL(self.tcp_end_effector_name, H_marker_to_world, self.configuration.velocity_scaling, collision_check) -- aendert sich noch!!!
+  --self.end_effector:moveL(self.tcp_end_effector_name, H_marker_to_world, self.configuration.velocity_scaling, collision_check)
 
 end
 
@@ -1427,9 +1403,10 @@ function HandEye:moveToMarkerTests()
     return
   end
   --move the end effector there..
-  local check_for_collisions = true
+  local collision_check = true
   print(H_tcp_to_world)
-  self.move_group:moveL(self.tcp_end_effector_name, H_tcp_to_world, self.configuration.velocity_scaling, collision_check)
+  self.move_group:moveL(self.tcp_end_effector_name, H_tcp_to_world, self.configuration.velocity_scaling, collision_check) -- aendert sich noch!!!
+  --self.end_effector:moveL(self.tcp_end_effector_name, H_tcp_to_world, self.configuration.velocity_scaling, collision_check)
 
 end
 
@@ -1451,7 +1428,8 @@ function HandEye:moveLToTf(target_tf)
   print('self.configuration.velocity_scaling')
   print(self.configuration.velocity_scaling)
   --self.move_group:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions)
-  self.xamla_mg:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions)
+  self.xamla_mg:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions) -- aendert sich noch!!!
+  --self.end_effector:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions)
 
 end
 
@@ -1486,7 +1464,8 @@ function HandEye:moveLToTfSupervised(target_tf)
   end
 
 
-  local handle = self.xamla_mg:moveLSupervised(self.tcp_end_effector_name, Tf, velocity_scaling, check_for_collisions, done_cb)
+  local handle = self.xamla_mg:moveLSupervised(self.tcp_end_effector_name, Tf, velocity_scaling, check_for_collisions, done_cb) -- aendert sich evtl. noch!!!
+  --local handle = self.end_effector:moveLSupervised(self.tcp_end_effector_name, Tf, velocity_scaling, check_for_collisions, done_cb)
   assert(torch.isTypeOf(handle, motionLibrary.SteppedMotionClient))
 
   local input
@@ -1607,7 +1586,7 @@ function HandEye:movePToTf(Tf)
   self.debug:publishTf(H_desired_stamped:toTensor(), world_frame_id, 'desired_tcp')
 
   -- move there
-  local check_for_collisions = true
+  local collision_check = true
   self.move_group:moveP(self.tcp_end_effector_name, H_desired_stamped, self.configuration.velocity_scaling, collision_check)
 
 end
@@ -1622,7 +1601,8 @@ end
 --    2- python int_marker.py is running to publish the tf of the desired pose for the tcp
 function HandEye:pickingPose()
 
-  self:openGripper()
+  -- open gripper
+  self.gripper:move{width=0.06, speed=0.2} -- move open
 
   --request the current pose of int_marker
   local tf_available, H_marker_to_world = self.debug:requestTf(world_frame_id, marker_frame_id)
@@ -1663,7 +1643,7 @@ function HandEye:pickingPose()
   self:moveLToTf(Tf_picking_pose)
 
   -- close the gripper and move back to start pose
-  self:closeGripper()
+  self.gripper:move{width=0.0, speed=0.2, force=20, stop_on_block=false} -- move closed
   self:moveLToTf(Tf_pre_picking_pose)
   --self:moveToStart()
 
@@ -1672,7 +1652,8 @@ end
 
 function HandEye:moveToIntMarkerPoseWithPrePick()
 
-  self:openGripper()
+  -- open gripper
+  self.gripper:move{width=0.06, speed=0.2} -- move open
   --request the current pose of int_marker
   local tf_available, H_marker_to_world_tf = self.debug:requestTf(marker_frame_id, world_frame_id)
   if not tf_available then
@@ -1697,7 +1678,8 @@ function HandEye:moveToIntMarkerPoseWithPrePick()
 
   self:moveLToTf(pre_pick_pose_tf)
   self:moveLToTf(pick_pose_tf)
-  self:closeGripper()
+  -- close gripper
+  self.gripper:move{width=0.0, speed=0.2, force=20, stop_on_block=false} -- move closed
   self:moveLToTf(pre_pick_pose_tf)
 
 

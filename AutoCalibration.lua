@@ -6,7 +6,7 @@ local xutils = require 'xamlamoveit.xutils'
 local autoCalibration = require 'autoCalibration_env'
 local CalibrationMode = autoCalibration.CalibrationMode
 local CalibrationFlags = autoCalibration.CalibrationFlags
---local xamlamoveit = require 'xamlamoveit'
+local xamlamoveit = require 'xamlamoveit'
 --local datatypes = xamlamoveit.datatypes
 
 local cv = require 'cv'
@@ -21,10 +21,8 @@ require 'multiPattern.PatternLocalisation'
 --local xml = require 'xml'  -- for exporting the .t7 calibration file to .xml
 
 local grippers = require 'xamlamoveit.grippers.env'
-local index_grippers = {} --index each gripper with an int
 
 local ConfigurationCalibration = require 'ConfigurationCalibration' --class to manage the calibration data
-
 
 local function tryRequire(module_name)
   local ok, val = pcall(function() return require(module_name) end)
@@ -35,36 +33,10 @@ local function tryRequire(module_name)
   end
 end
 
-
 local slstudio = tryRequire('slstudio')
 
 
-local GraspingState = {
-  Idle = 0,
-  NoPartFound = 2,
-  PartLost = 3,
-  Hold = 4,
-}
-
-
 local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalibration)
-
-
---asks the user to select a gripper from grippers
-local function selectGripper(grippers)
-    for key,value in pairs(grippers) do
-        print(#index_grippers + 1, key)
-        index_grippers[#index_grippers + 1] = key
-    end
-    print('Select one gripper and press Enter')
-    local index = io.read("*n")
-    if index ~= nil and index > 0 and index == index then
-        return index_grippers[index]
-    else
-        print('Not a valid index')
-        return nil
-    end
-end
 
 
 --creates a gripper client for the specified key
@@ -75,10 +47,10 @@ local function constructGripper(grippers, key, nh)
         return grippers[key].new(nh, robotiq_action_name)
     elseif key == 'WeissTwoFingerModel' then
         local wsg_namespace = '/xamla/wsg_driver/wsg50'
-        --local wsg_action_name = 'wsg_50_common/Command'
         local wsg_action_name = 'gripper_control'
-        local name = '/xamla/wsg_driver/wsg50/gripper_control'
-        return grippers[key].new(nh,wsg_namespace, name)
+        return grippers[key].new(nh, wsg_namespace, wsg_action_name)
+        --local name = '/xamla/wsg_driver/wsg50/gripper_control'
+        --return grippers[key].new(nh, wsg_namespace, name)
     end
 end
 
@@ -86,17 +58,16 @@ end
 local function initializeGripperServices(self)
   local node_handle = ros.NodeHandle()
   self.node_handle = node_handle
-  --get the key from the configuration instead
-  --local key = selectGripper(grippers)
-  local key = self.configuration.gripper_key
+  local key = self.configuration.gripper_key -- get the key from the configuration
   self.gripper = constructGripper(grippers, key, self.node_handle)
-  print('AutoCalibration calling home gripper via gripper:connect()')
+  print('AutoCalibration calling home gripper')
   if self.gripper ~= nil then
-    self.gripper:connect()
+    self.gripper:home()
   end
   print('gripper:')
   print(self.gripper)
 end
+
 
 --http://notebook.kulchenko.com/algorithms/alphanumeric-natural-sorting-for-humans-in-lua
 function alphanumsort(o)
@@ -211,42 +182,62 @@ end
 
 function AutoCalibration:moveToStart()
   local base_poses = self.configuration.base_poses
-  assert(base_poses ~= nil)
+  assert(base_poses ~= nil, 'Base poses are not defined.')
   moveJ(self, base_poses['start'])
 end
 
 
 function AutoCalibration:moveToCaptureBase()
   local base_poses = self.configuration.base_poses
-  assert(base_poses ~= nil)
+  assert(base_poses ~= nil, 'Base poses are not defined.')
   moveJ(self, base_poses['camera1_base'])
 end
 
 
 function AutoCalibration:pickCalibrationTarget()
-  --self:homeGripper()
-  --will need to implement a home() method in the interface
-  print('close the gripper')
-  self:closeGripper()
+  self.gripper:home()
+  print('close the gripper') 
+  self.gripper:move{width=0.0, speed=0.2, force=20, stop_on_block=false} -- move closed
   local base_poses = self.configuration.base_poses
-  assert(base_poses ~= nil)
+  assert(base_poses ~= nil, 'Base poses are not defined.')
+  print('move to start')
   moveJ(self, base_poses['start'])
-  self:openGripper()
+  print('open the gripper')
+  local t = self.gripper:move{width=0.05} -- move open
+  assert(t:hasCompletedSuccessfully() == true, 'Cannot open gripper.')
+  print('move to pre pick pose')
   moveJ(self, base_poses['pre_pick_marker'])
+  print('move to pick pose')
   moveJ(self, base_poses['pick_marker'])
-  self:closeGripperMarker()
+  print('grasp calibration target')
+  -- If width of calibration target may vary (i.e is assumed to be unknown),
+  -- set width to 0.0, otherwise width can be set to the width of our calibration pattern.
+  -- The "wsg50" needs the width of the part to be grasped -> set width to 0.0115.
+  t = self.gripper:grasp{width=0.0115, speed=0.2} -- grasp target
+  assert(t:hasCompletedSuccessfully() == true, 'Cannot grasp pattern.')
+  --t = self.gripper:move{width=0.0, speed=0.2, force=30, stop_on_block=false} -- move grasp
+  --assert(t:hasCompleted() == true, 'Cannot grasp pattern.')
+  print('move to post pick pose')
   moveJ(self, base_poses['post_pick_marker'], self.configuration.velocity_scaling * 0.25)
+  print('move to start')
   moveJ(self, base_poses['start'])
 end
 
 
 function AutoCalibration:returnCalibrationTarget()
   local base_poses = self.configuration.base_poses
-  assert(base_poses ~= nil)
+  assert(base_poses ~= nil, 'Base poses are not defined.')
+  print('move to start')
   moveJ(self, base_poses['start'])
+  print('move to post pick (= pre return) pose')
   moveJ(self, base_poses['post_pick_marker'])
+  print('move to pick (= return) pose')
+  sys.sleep(3)
   moveJ(self, base_poses['pick_marker'], self.configuration.velocity_scaling * 0.25)
-  self:openGripper()
+  print('release calibration target')
+  local t = self.gripper:release{width=0.05, speed=0.2} -- release target
+  assert(t:hasCompletedSuccessfully() == true, 'Cannot release pattern.')
+  print('move to pre pick (= post return) pose')
   moveJ(self, base_poses['pre_pick_marker'])
 end
 
@@ -287,33 +278,9 @@ end
 
 
 function AutoCalibration:closeGripper()
-  local width = 0.001
-  local force = 60
-  local speed = 1.0
-  local acceleration = 0.1
-  local execute_timeout_in_s = 5
-  -- this funtion should use move or release depending on gripper state -> open the gripper
   if self.gripper ~= nil then
-    self.gripper:close(width, force, speed,acceleration,execute_timeout_in_s)
-  else
-    print('Need to initialize the gripper')
-  end
-end
-
-
-function AutoCalibration:closeGripperMarker()
-  local width = 0.001
-  local force = 60
-  local speed = 1.0
-  local acceleration = 0.1
-  local execute_timeout_in_s = 5
-  -- this funtion should use move or release depending on gripper state -> open the gripper
-  if self.gripper ~= nil then
-    -- the wsg50 needs the width of the part
-    if self.configuration.gripper_key == 'WeissTwoFingerModel' then
-      width = 0.0115
-    end
-    self.gripper:close(width, force, speed, acceleration, execute_timeout_in_s)
+    print('close the gripper') 
+    self.gripper:move{width=0.0, speed=0.2, force=20, stop_on_block=false} -- move closed
   else
     print('Need to initialize the gripper')
   end
@@ -321,49 +288,11 @@ end
 
 
 function AutoCalibration:openGripper()
-  local width = 0.0615
-  local force = 60
-  local speed = 1.0
-  local acceleration = 0.1
-  local execute_timeout_in_s = 5
-  -- this funtion should use move or release depending on gripper state -> open the gripper
   if self.gripper ~= nil then
-    self.gripper:open(width, force, speed,acceleration,execute_timeout_in_s )
+    print('open the gripper')
+    self.gripper:move{width=0.06, speed=0.2} -- move open
   else
     print('Need to initialize the gripper')
-  end
-end
-
-
-function AutoCalibration:ackGripper()
-  if self.ack_error_client:exists() then
-    local req = self.ack_error_client:createRequest()
-    local r = self.ack_error_client:call(req)
-    if r == nil then
-        ros.ERROR("Could not contact error acknowledge service")
-    else
-        ros.INFO("Acknowledged error of gripper")
-    end
-  else
-    ros.ERROR("Could not contact error acknowledge service")
-  end
-end
-
-
-function AutoCalibration:homeGripper()
-  print('Homeing gripper')
-  if self.gripper.gripper_action_client:waitForServer(ros.Duration(5.0)) then
-    local g = self.gripper.gripper_action_client:createGoal()
-    g.command.command_id = 104
-    local state = self.gripper.gripper_action_client:sendGoalAndWait(g, 5, 5)
-    local result = self.gripper.gripper_action_client:getResult()
-    if state == 7 and result.status.return_code == 0 then
-      ros.INFO("Homed gripper successfully")
-    else
-      ros.ERROR("Could not home gripper")
-    end
-  else
-    ros.ERROR("Could not contact gripper action server")
   end
 end
 

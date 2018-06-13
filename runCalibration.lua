@@ -16,7 +16,7 @@ local ros = require 'ros'
 local datatypes = require 'xamlamoveit.datatypes'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
 local xutils = require 'xamlamoveit.xutils'
-local grippers = require 'xamlamoveit.grippers'
+local grippers = require 'xamlamoveit.grippers.env'
 local autoCalibration = require 'autoCalibration_env'
 local CalibrationMode = autoCalibration.CalibrationMode
 local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
@@ -399,12 +399,12 @@ end
 
 local function closeGripper()
   prompt:printTitle('Close gripper')
-  hand_eye:closeGripper()
+  auto_calibration:closeGripper()
 end
 
 local function openGripper()
   prompt:printTitle('Open gripper')
-  hand_eye:openGripper()
+  auto_calibration:openGripper()
 end
 
 
@@ -582,8 +582,6 @@ local function init()
   if not offline then
     ximea_client = XimeaClient(nh, 'ximea_mono', false, false)
   end
-
-
 
   prompt = xutils.Prompt()
   prompt:enableRawTerminal()
