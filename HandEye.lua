@@ -1,3 +1,12 @@
+--[[
+  Hand-Pattern or Hand-Eye calibration, depending on if we have an extern 
+  or an onboard camera setup.
+  Current limitations:
+  * Only working with stereo camera setup
+  * Only working with our standard calibration pattern (circle pattern of id 21)
+  * Only tested with UR5 and SDA10D (especially if we have more than one move group, the current implementation will probably only work with an SDA)
+  * Only working with ximea cameras
+]]
 local xamla3d = require 'xamla3d'
 local calib = require 'handEyeCalibration'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
@@ -13,7 +22,6 @@ require "cv.imgcodecs"
 require "cv.features2d"
 
 require 'image'
-local cvImg = image.lena()
 
 local pcl = require 'pcl'
 
@@ -35,9 +43,9 @@ end
 
 local slstudio = tryRequire('slstudio')
 
--- Important: Everything has to be in meters [m]!!!
+-- Important: Everything has to be in meters.
 
-local DEFAULT_CIRCLE_PATTERN_GEOMETRY = torch.Tensor({21, 8, 0.005}) -- rows, cols, pointDist = 0.005m = 5mm
+local DEFAULT_CIRCLE_PATTERN_GEOMETRY = torch.Tensor({21, 8, 0.005})
 local DEFAULT_CIRCLE_PATTERN_ID = 21
 
 local patternLocalizer = PatternLocalisation()
@@ -48,20 +56,19 @@ patternLocalizer:setPatternIDdictionary(
 )
 patternLocalizer:setDBScanParams(130, 10)
 patternLocalizer:setPatternData(
-  DEFAULT_CIRCLE_PATTERN_GEOMETRY[2], --width = 8
-  DEFAULT_CIRCLE_PATTERN_GEOMETRY[1], --height = 21
-  DEFAULT_CIRCLE_PATTERN_GEOMETRY[3]  --pointDist = 0.05
+  DEFAULT_CIRCLE_PATTERN_GEOMETRY[2],
+  DEFAULT_CIRCLE_PATTERN_GEOMETRY[1],
+  DEFAULT_CIRCLE_PATTERN_GEOMETRY[3]
 )
-
+local M_PI = 3.14159265359
 
 local handEye = {}
 
 
-local MARKER_ID = 21 -- -1
-local BEAMER_CALIBRATION_FILENAME = "/home/xamla/Rosvita.Control/projects/UR5/sls_2018-03-02_155849.xml"
+local MARKER_ID = 21 -- currently only working with our standard pattern for calibration
+--local BEAMER_CALIBRATION_FILENAME = "/home/xamla/Rosvita.Control/projects/UR5/sls_2018-03-02_155849.xml"
 
 local HandEye = torch.class('autoCalibration.HandEye', handEye)
-
 
 local marker_frame_id = 'int_marker'
 local world_frame_id = 'world'
@@ -81,7 +88,6 @@ end
 
 
 function HandEye:__init(configuration, calibration_folder_name, move_group, motion_service, ximea_client, gripper, xamla_mg)
-
   self.cloud_topics = {'point_cloud', 'filtered_cloud'}
   self.img_topics = {'pattern_detection_left', 'pattern_detection_right'}
   self.debug = debug.new(self.cloud_topics, self.img_topics)
@@ -93,15 +99,16 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
   self.xamla_mg = xamla_mg
   self.motion_service = motion_service
 
-  self.move_groups = self.motion_service:getMoveGroup()  -- If no name is specified first move group is used.
-  self.rc = self:getEndEffectors(self.move_groups)
-  if self.rc == nil then
-    return
+  self.move_groups = self.motion_service:getMoveGroup()  -- If no name is specified first move group is used (and this is linked to all endeffectors)
+  self.rc = self:getEndEffectors(self.move_groups) -- gets all endeffectors of the first move group
+  
+  self.right_move_group, self.left_move_group, self.both_move_group, self.xamla_mg_both = nil, nil, nil, nil
+  if self.rc ~= nil then
+    self.right_move_group = self.motion_service:getMoveGroup(self.rc.right_move_group_name)
+    self.left_move_group = self.motion_service:getMoveGroup(self.rc.left_move_group_name)
+    self.both_move_group = self.motion_service:getMoveGroup(self.rc.both_move_group_name)
+    self.xamla_mg_both = motionLibrary.MoveGroup(self.motion_service, self.rc.both_move_group_name) -- motion client
   end
-  self.right_move_group = self.motion_service:getMoveGroup(self.rc.right_move_group_name)
-  self.left_move_group = self.motion_service:getMoveGroup(self.rc.left_move_group_name)
-  self.both_move_group = self.motion_service:getMoveGroup(self.rc.both_move_group_name)
-  self.xamla_mg_both = motionLibrary.MoveGroup(self.motion_service, self.rc.both_move_group_name) -- motion client
 
   self.gripper = gripper
   self.calibration_folder_name = calibration_folder_name
@@ -115,15 +122,11 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
   self.left_camera_serial = left_camera.serial
   self.right_camera_serial = right_camera.serial
   self.calibration_fn = string.format('stereo_cams_%s_%s.t7', self.left_camera_serial, self.right_camera_serial)
-
   self.stereo_calibration_path = path.join(self.current_path, self.calibration_fn)
-
   self:loadStereoCalibration(self.stereo_calibration_path)
   self.tcp_frame_of_reference, self.tcp_end_effector_name = self:getEndEffectorName()
 
-
-  -- request the tf between the fingetips and the current end effector
-  --print('self:requestTf...', self.tcp_frame_of_reference, ' ', self.fingertip_frame_id)
+  -- request the tf between the fingertips and the current end effector
   print('self:requestTf...', self.tcp_frame_of_reference, ' ', self.tcp_frame_of_reference)
   local tf_available, H_fingers_to_tcp = self.debug:requestTf(self.tcp_frame_of_reference, self.tcp_frame_of_reference)
   if not tf_available then
@@ -133,12 +136,10 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
   self.H_fingers_to_tcp = H_fingers_to_tcp
   print('self.H_fingers_to_tcp')
   print(self.H_fingers_to_tcp)
-
 end
 
 
 function HandEye:loadStereoCalibration(stereo_calib_fn)
-
   -- check first if there is an existing stereo calibration file
   if path.exists(stereo_calib_fn) then
     local stereoCalib = torch.load(stereo_calib_fn)
@@ -164,18 +165,16 @@ function HandEye:getEndEffectorName()
   print(move_group_details)
 
   -- find out the index of the selected move_group
-  local index_ur = 1
+  local index = 1
   for i = 1, #move_group_names do
     if move_group_names[i] == self.configuration.move_group_name then
-      index_ur = i
-      print(self.configuration.move_group_name, ' index=',index_ur)
+      index = i
+      print(self.configuration.move_group_name, ' index = ', index)
     end
   end
-
-
-  local index = 1
-  local tcp_frame_of_reference = move_group_details[move_group_names[index_ur]].end_effector_link_names[1]
-  local tcp_end_effector_name = move_group_details[move_group_names[index_ur]].end_effector_names[1]
+  --local index = 1
+  local tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
+  local tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
   return tcp_frame_of_reference,tcp_end_effector_name
 end
 
@@ -186,15 +185,14 @@ function HandEye:getEndEffectors(move_groups)
   print('HandEye:getEndEffectors(): move_group_names')
   print(move_group_names)
 
-  if #move_group_names == 1 then -- UR
-    --print('#move_group_names ~= 6: is this an SDA?')
-    --return nil
+  if #move_group_names == 1 then -- only one move group (e.g. UR)
     rc.tcp_frame_of_reference = move_group_details[move_group_names[1]].end_effector_link_names[1]
     rc.tcp_end_effector_name = move_group_details[move_group_names[1]].end_effector_names[1]
     rc.move_group_name = move_group_names[1]
   end
 
-  if #move_group_names >= 6 then -- SDA
+  if #move_group_names >= 6 then -- 6 or more move groups (e.g. SDA)
+    -- the following is special for SDA
     local index = 5
     rc.left_tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
     rc.left_tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
@@ -216,313 +214,24 @@ end
 
 
 function HandEye:captureImageNoWait(camera_configuration)
-
   local camera_serial = camera_configuration.serial
   local exposure = camera_configuration.exposure
-
+  print("HandEye:captureImageNoWait: camera serial:")
   print(camera_serial)
   -- capture image
-  self.ximea_client:setExposure(exposure, {camera_serial})
-  local image = self.ximea_client:getImages({camera_serial})
-
+  self.ximea_client:setExposure(exposure, {camera_serial})  -- works only for ximea cameras
+  local image = self.ximea_client:getImages({camera_serial})  -- works only for ximea cameras
   if image:nDimension() == 2 then
     image = cv.cvtColor{image, nil, cv.COLOR_GRAY2BGR}
   end
-
   return image
-
 end
 
 
-function HandEye:calcPatternPoseRelativeToCam(
-  imgLeft,
-  imgRight,
-  whichCam)
-  local patternPoseFinal
-  local whichCam = whichCam or 'left'
-
-  -- Stereo Rectify:
-  local R = self.rightLeftCamTrafo[{{1, 3}, {1, 3}}]:double()
-  local T = self.rightLeftCamTrafo[{{1, 3}, {4}}]:double()
-  local leftR = torch.DoubleTensor(3, 3)
-  local rightR = torch.DoubleTensor(3, 3)
-  local leftP = torch.DoubleTensor(3, 4)
-  local rightP = torch.DoubleTensor(3, 4)
-  local Q = torch.DoubleTensor(4, 4)
-
-  cv.stereoRectify {
-    cameraMatrix1 = self.leftCameraMatrix,
-    distCoeffs1 = self.leftDistCoeffs,
-    cameraMatrix2 = self.rightCameraMatrix,
-    distCoeffs2 = self.rightDistCoeffs,
-    imageSize = {imgLeft:size(2), imgLeft:size(1)},
-    R = R,
-    T = T,
-    R1 = leftR,
-    R2 = rightR,
-    P1 = leftP,
-    P2 = rightP,
-    Q = Q,
-    flags = 0
-  }
-
-  -- Undistortion + rectification:
-  local mapAImgLeft, mapBImgLeft =
-    cv.initUndistortRectifyMap {
-    cameraMatrix = self.leftCameraMatrix,
-    distCoeffs = self.leftDistCoeffs,
-    R = leftR,
-    newCameraMatrix = leftP,
-    size = {imgLeft:size(2), imgLeft:size(1)},
-    m1type = cv.CV_32FC1
-  }
-  local imgLeftRectUndist =
-    cv.remap {src = imgLeft, map1 = mapAImgLeft, map2 = mapBImgLeft, interpolation = cv.INTER_NEAREST}
-
-  local mapAImgRight, mapBImgRight =
-    cv.initUndistortRectifyMap {
-    cameraMatrix = self.rightCameraMatrix,
-    distCoeffs = self.rightDistCoeffs,
-    R = rightR,
-    newCameraMatrix = rightP,
-    size = {imgRight:size(2), imgRight:size(1)},
-    m1type = cv.CV_32FC1
-  }
-  local imgRightRectUndist =
-    cv.remap {src = imgRight, map1 = mapAImgRight, map2 = mapBImgRight, interpolation = cv.INTER_NEAREST}
-
-  cv.imwrite{'./debug/imgLeftRectUndist.png', imgLeftRectUndist}
-  cv.imwrite{'./debug/imgRightRectUndist.png', imgRightRectUndist}
-
-  -- Detect all circle points of the pattern in the left/right image
-  local circleFinderParams = patternLocalizer.circleFinderParams
-  local blobDetector = cv.SimpleBlobDetector {circleFinderParams}
-  local keypointsLeft = blobDetector:detect {image = imgLeftRectUndist}
-  local keypointsRight = blobDetector:detect {image = imgRightRectUndist}
-  print(string.format("keypointsLeft.size: %d", keypointsLeft.size))
-  print(string.format("keypointsRight.size: %d", keypointsRight.size))
-
-  -- Draw keypoints
-  local imgKeypointsLeft = imgLeftRectUndist:clone()
-  local imgKeypointsRight = imgRightRectUndist:clone()
-  cv.drawKeypoints {imgLeftRectUndist, keypointsLeft, imgKeypointsLeft}
-  cv.drawKeypoints {imgRightRectUndist, keypointsRight, imgKeypointsRight}
-  -- Show detected (drawn) keypoints
-  --cv.imshow{"Keypoints 1", imgKeypointsLeft}
-  --cv.imshow{"Keypoints 2", imgKeypointsRight}
-  --cv.waitKey{-1}
-  cv.imwrite{'./debug/imgKeypointsLeft.png', imgKeypointsLeft}
-  cv.imwrite{'./debug/imgKeypointsRight.png', imgKeypointsRight}
-
-  local ok1, circlesGridPointsLeft =
-    cv.findCirclesGrid {
-    image = imgLeftRectUndist,
-    patternSize = { height = patternLocalizer.pattern.height, width = patternLocalizer.pattern.width },
-    --patternSize = {height = 21, width = 8},
-    flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
-    blobDetector = blobDetector
-  }
-
-  if ok1 then
-    print('findCirclesGrid found the target on the left image')
-  else
-    print('findCirclesGrid DID NOT find the target on the left image')
-    return ok1
-  end
-
-  --for debugging purposes, draw the detected circles and publish the image
-  cv.drawChessboardCorners{
-      image = imgLeftRectUndist,
-      patternSize = { height = patternLocalizer.pattern.height, width = patternLocalizer.pattern.width },
-      corners = circlesGridPointsLeft,
-      patternfound = ok1
-  }
-  print('drawChessboardCorners')
-
-  local nPoints = patternLocalizer.pattern.width * patternLocalizer.pattern.height
-  local x_0, x_f = 1, patternLocalizer.pattern.width
-  local y_0, y_f = 1, nPoints - patternLocalizer.pattern.width + 1
-
-  local origin = circlesGridPointsLeft[x_0][1]
-  local end_x  = circlesGridPointsLeft[x_f][1]
-  local end_y  = circlesGridPointsLeft[y_f][1]
-
-  --paint the x-axis
-  cv.arrowedLine{
-      img = imgLeftRectUndist,
-      pt1 = {origin[1], origin[2]},
-      pt2 = {end_x[1], end_x[2]},
-      color = {0,255,0}, -- green
-      thickness = 3,
-      line_type = 8,
-      shift = 0,
-      tipLength = 0.02
-  }
-  --paint the y-axis
-  cv.arrowedLine{
-      img = imgLeftRectUndist,
-      pt1 = {origin[1], origin[2]},
-      pt2 = {end_y[1], end_y[2]},
-      color = {0,0,255}, -- red
-      thickness = 3,
-      line_type = 8,
-      shift = 0,
-      tipLength = 0.02
-  }
-  for _ , index in ipairs({x_0, x_f, y_f}) do
-    --paint the origin
-    local colour = {255,255,255} -- white
-    if index == x_0 then
-      colour = {255,255,255}
-    elseif index == x_f then
-      colour = {0,0,255}
-    elseif index == y_f then
-      colour = {0,255,0}
-    end
-
-    cv.circle{
-        img = imgLeftRectUndist,
-        center = {circlesGridPointsLeft[index][1][1], circlesGridPointsLeft[index][1][2]},
-        color = colour,
-        radius = 15,
-        thickness = 3,
-        line_type = 8,
-    }
-  end
-
-  print('publishImg')
-  self.debug:publishImg(imgLeftRectUndist, 'pattern_detection_left')
-  self.debug:publishImg(imgRightRectUndist, 'pattern_detection_right')
-  --cv.imwrite{'./debug/pattern-detection.png', imgLeftRectUndist}
-
-  local ok2, circlesGridPointsRight =
-    cv.findCirclesGrid {
-    image = imgRightRectUndist,
-    patternSize = { height = patternLocalizer.pattern.height, width = patternLocalizer.pattern.width },
-    flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
-    blobDetector = blobDetector
-  }
-  print('findCirclesGrid imgRightRectUndist')
-  print(string.format("ok1: %s", ok1))
-  print(string.format("ok2: %s\n", ok2))
-
-  local ok = ok1 and ok2
-  if ok then
-    -- Save 2d grid points.
-    local nPoints = patternLocalizer.pattern.width * patternLocalizer.pattern.height
-    local leftProjPoints = torch.DoubleTensor(2, nPoints) -- 2D coordinates (x,y) x #Points
-    local rightProjPoints = torch.DoubleTensor(2, nPoints)
-    for i = 1, nPoints do
-      leftProjPoints[1][i] = circlesGridPointsLeft[i][1][1]
-      leftProjPoints[2][i] = circlesGridPointsLeft[i][1][2]
-      rightProjPoints[1][i] = circlesGridPointsRight[i][1][1]
-      rightProjPoints[2][i] = circlesGridPointsRight[i][1][2]
-    end
-
-    local resulting4DPoints = torch.DoubleTensor(4, nPoints) -- 4 x #Points
-
-    -- TriangulatePoints:
-    ---------------------
-    cv.triangulatePoints {leftP, rightP, leftProjPoints, rightProjPoints, resulting4DPoints}
-
-    local resulting3DPoints = torch.DoubleTensor(nPoints, 3)
-    for i = 1, nPoints do
-      resulting3DPoints[i][1] = resulting4DPoints[1][i] / resulting4DPoints[4][i]
-      resulting3DPoints[i][2] = resulting4DPoints[2][i] / resulting4DPoints[4][i]
-      resulting3DPoints[i][3] = resulting4DPoints[3][i] / resulting4DPoints[4][i]
-    end
-
-    local pointsInCamCoords = torch.DoubleTensor(nPoints, 3)
-    if whichCam == "left" then
-      for i = 1, nPoints do
-        pointsInCamCoords[i] = torch.inverse(leftR) * resulting3DPoints[i]
-      end
-    else
-      for i = 1, nPoints do
-        pointsInCamCoords[i] = torch.inverse(rightR) * resulting3DPoints[i]
-      end
-    end
-
-    -- Generate plane through detected 3d points to get the transformation
-    ----------------------------------------------------------------------
-    -- of the pattern into the coordinatesystem of the camera:
-    ----------------------------------------------------------
-    -- Plane fit with pseudo inverse:
-    local A = torch.DoubleTensor(nPoints, 3) -- 2-dim. tensor of size nPoints x 3
-    local b = torch.DoubleTensor(nPoints)    -- 1-dim. tensor of size nPoints
-    for i = 1, nPoints do
-      A[i][1] = pointsInCamCoords[i][1]
-      A[i][2] = pointsInCamCoords[i][2]
-      A[i][3] = 1.0
-      b[i] = pointsInCamCoords[i][3]
-    end
-    -- Calculate x = A^-1 * b = (A^T A)^-1 * A^T * b (with pseudo inverse of A)
-    local At = A:transpose(1, 2)
-    local x = torch.mv(torch.mm(torch.inverse(torch.mm(At, A)), At), b)
-    
-    -- Determine z-axis as normal on plane:
-    local n = torch.DoubleTensor(3)
-    n[1] = x[1]
-    n[2] = x[2]
-    n[3] = -1.0
-    local z_unit_vec = torch.div(n, torch.norm(n))
-    
-    -- Determine x-axis along left boundary points of the pattern
-    local x_direction = pointsInCamCoords[x_f] - pointsInCamCoords[x_0]
-    local x_unit_vec = torch.div(x_direction, torch.norm(x_direction))
-
-    -- Determine y-axis along top boundary points of the pattern:
-    local y_direction = pointsInCamCoords[y_f] - pointsInCamCoords[y_0]
-    local y_unit_vec = torch.div(y_direction, torch.norm(y_direction))
-
-    -- Check, whether the normal vector z_unit_vec points into the correct direction.
-    local cross_product = torch.DoubleTensor(3)
-    cross_product = torch.cross(x_unit_vec, y_unit_vec)
-    cross_product = torch.div(cross_product, torch.norm(cross_product))
-    if z_unit_vec * cross_product < 0.0 then
-      z_unit_vec = -1.0 * z_unit_vec
-    end
-
-    -- x_unit_vec * z_unit_vec has to be zero.
-    -- Map x_unit_vec onto plane.
-    local new_x_unit_vec = x_unit_vec - x_unit_vec * z_unit_vec * z_unit_vec
-    if new_x_unit_vec * x_unit_vec < 0.0 then
-      new_x_unit_vec = -1.0 * new_x_unit_vec
-    end
-    
-    -- Determine new y_unit_vec as cross product of x_unit_vec and z_unit_vec:
-    local new_y_unit_vec = torch.cross(new_x_unit_vec, z_unit_vec)
-    if new_y_unit_vec * y_unit_vec < 0.0 then
-      new_y_unit_vec = -1.0 * new_y_unit_vec
-    end
-    
-    -- Transform pattern coordinate system into camera coordinate system:
-    -- M_B->A = (x_unit_vec, y_unit_vec, z_unit_vec, support vector)
-    patternPoseFinal = torch.DoubleTensor(4, 4):zero()
-    patternPoseFinal[{{1, 3}, {1}}] = new_x_unit_vec
-    patternPoseFinal[{{1, 3}, {2}}] = new_y_unit_vec
-    patternPoseFinal[{{1, 3}, {3}}] = z_unit_vec
-    patternPoseFinal[{{1, 3}, {4}}] = pointsInCamCoords[x_0] -- = support vector
-    patternPoseFinal[4][4] = 1
-
-  else
-    print("PATTERN NOT FOUND!!!")
-    patternPoseFinal = torch.eye(4)
-  end
-
-  return ok, patternPoseFinal
-end
-
-
-function HandEye:debug()
-  print('Calling HandEye:debug() method')
-end
-
-
---
--- imgData = {imgDataLeft = {imagePaths= {}}, imgDataRight = {imagePaths= {}}}
--- returns the transformation H_pattern_to_tcp
---
+-- Note: This hand-eye calibration can only be used with a stereo camera setup!
+-- params: imgData = {imgDataLeft = {imagePaths= {}}, imgDataRight = {imagePaths= {}}}
+-- output: Returns the transformation camera_to_tcp or pattern_to_tcp, depending on if we have
+--         an 'onboard' camera setup or an 'extern' camera setup
 function HandEye:calibrate(imgData)
 
   --first load the latest stereo calibration file
@@ -533,85 +242,64 @@ function HandEye:calibrate(imgData)
   -- the <calibration_name> folder has to exist or be created to be able to store the hand eye matrices
   os.execute('mkdir -p ' .. output_path)
 
-
-  -- Load calibration images and TCP data:
-  ----------------------------------------
-  local imgDataLeft = imgData.imgDataLeft--torch.load(path .. "scanCamLeftPoseLog.t7")
-  local imgDataRight = imgData.imgDataRight--torch.load(path .. "scanCamRightPoseLog.t7")
+  -- load calibration images and TCP data
+  local imgDataLeft = imgData.imgDataLeft
+  local imgDataRight = imgData.imgDataRight
 
   local Hg = {}
   local Hc = {}
-  local Hc_old = {}
 
-  -- Extract pattern points:
-  --------------------------
+  -- extract pattern points:
   local imagesTakenForHandPatternCalib = {}
-  local imagesNotTaken = {}
   for i, fn in ipairs(imgDataLeft.imagePaths) do
 
     local fnLeft = imgDataLeft.imagePaths[i]
     local fnRight = imgDataRight.imagePaths[i]
-
     local imgLeft = cv.imread {fnLeft}
     local imgRight = cv.imread {fnRight}
 
-    --[[
-    -- Note: MoveGroup 'endeffector' has been used. -> Hence, TCP is the gripper tip!!!
-    -- Note2: Robot poses for recording left and right cam images are the same.
-    local robotPose = imgDataLeft.tcpPoses[i] -- = imgDataRight.tcpPoses[i]
-    ]]
+    -- Note: If MoveGroup 'endeffector' has been used, then TCP is the gripper tip.
     -- Use wrist_3_link i.e. flanch pose instead of gripper tip pose.
-    -- This enables us to our old DH-parameter based forward kinematic calculation later on!
 
-
-    -- jsposes.recorded_joint_values[i] = self.recorded_joint_values[i]
-    --jsposes.recorded_poses[i]
     local robotPose = imgData.jsposes.recorded_poses[i]
-
     --local robotPose = imgDataLeft.jointPoses[i].ee_link
-    -- wrist_3_link and ee_link are the same!
+    --local robotPose = imgDataLeft.jointPoses[i].wrist_3_link
 
     print(imgLeft:size(1))
     print(imgLeft:size(2))
     print(imgLeft:size(3))
 
-    --local ok,
-    --  patternPoseRelToCam =
-    --  self:calcPatternPoseRelativeToCam(
-    --  imgLeft,
-    --  imgRight,
-    --  'left'
-    --)
-    local ok, patternPoseRelToCam = patternLocalizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left')
-
-    --alternatively, use the monocular approach
-    --local patternPoseRelToCam, points3d = patternLocalizer:calcCamPose(imgLeft, leftCameraMatrix, patternLocalizer.pattern)
-
+    local ok, patternPoseRelToCamera = patternLocalizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left')
+    -- alternatively, use the monocular approach
+    --local patternPoseRelToCamera, points3d = patternLocalizer:calcCamPose(imgLeft, leftCameraMatrix, patternLocalizer.pattern)
 
     if ok then
-      -- Switch between left/right cam:
-      ---------------------------------
-      --print("leftCamPoseRelToPattern:")
-      --print(camPoseRelToPattern)
-      table.insert(Hc, torch.inverse(patternPoseRelToCam)) -- we need camera pose relative to pattern
-      table.insert(Hg, robotPose)
-      if m then
-        table.insert(Hc_old, torch.inverse(foundMarkers[1].pose))
+      local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
+      local cameraPatternTrafo = cameraPoseRelToPattern
+      if self.configuration.camera_location_mode == 'onboard' then
+        print('We have an onboard camera setup, thus we have to use \"patternPoseRelToCamera\".')
+        cameraPatternTrafo = patternPoseRelToCamera
+      else
+        print('We have an extern camera setup, thus we have to use \"cameraPoseRelToPattern\"')
       end
+      table.insert(Hc, cameraPatternTrafo)
+      table.insert(Hg, robotPose)
       table.insert(imagesTakenForHandPatternCalib, i)
     end
   end
 
-  --H = pose of the pattern in TCP coordinate frame
-  H, res, res_angle = calib.calibrate(Hg, Hc)
-  --[[local H_old, res_old, res_angle_old
-  if #Hg == #Hc_old then
-    H_old, res_old, res_angle_old = calib.calibrate(Hg, Hc_old)
-  end]]
+  -- H = pose of the pattern/camera in TCP coordinate frame 
+  -- 'extern' camera setup: pattern pose in tcp coordinates
+  -- 'onboard' camera setup: camera pose in tcp coordinates
+  local H, res, res_angle = calib.calibrate(Hg, Hc)
 
-  print("Hand-Pattern") -- TCP <-> Pattern
-  print(H)
-
+  if self.configuration.camera_location_mode == 'onboard' then
+    print("Temporary Hand-Eye matrix:") -- TCP <-> Camera
+    print(H)
+  else
+    print("Temporary Hand-Pattern matrix:") -- TCP <-> Pattern
+    print(H)
+  end
   print("#Hc:")
   print(#Hc)
   print("#imagesTakenForHandPatternCalib:")
@@ -625,45 +313,53 @@ function HandEye:calibrate(imgData)
   local current_output_path = path.join(self.current_path, 'imagesTakenForHandPatternCalib.t7')
   os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
 
-  --[[if #Hg == #Hc_old then
-    print("For comparison1:")
-    print(H_old)
-  end]]
-
-  --print("For comparison2:")
-  -- Switch between left/right cam:
-  ---------------------------------
-  --old_H = torch.load(path .. "HandPattern_withLeftCam.t7")
-  --old_H = torch.load(path .. "HandPattern_withRightCam.t7")
-  --print(old_H)
-  -- Perform cross validation:
-  ----------------------------
-  --bestHESolution = pose of the pattern in TCP coordinate frame   G_H_pattern
-  bestHESolution, alignmentErrorTest, alignmentError = calib.calibrateViaCrossValidation(Hg, Hc, #Hg-2, 5) --  20, 10
-  print("Best Hand-Pattern Solution")
-  print(bestHESolution)
+  -- perform cross validation
+  local bestHESolution, alignmentErrorTest, alignmentError = calib.calibrateViaCrossValidation(Hg, Hc, #Hg-2, 5)
+  if self.configuration.camera_location_mode == 'onboard' then
+    print("Best Hand-Eye solution:") -- TCP <-> Camera
+    print(bestHESolution)
+  else
+    print("Best Hand-Pattern solution:") -- TCP <-> Pattern
+    print(bestHESolution)
+  end
   bestHESolution = bestHESolution or H
   self.debug:publishTf(bestHESolution, self.tcp_frame_of_reference, "pattern_HE")
 
-  -- Save hand-pattern calibration:
-  ---------------------------------
-  file_output_path = path.join(output_path, 'HandPattern.t7')
-  torch.save(file_output_path, bestHESolution)
-  link_target = path.join('..', self.calibration_folder_name, 'HandPattern.t7')
-  current_output_path = path.join(self.current_path, 'HandPattern.t7')
-  os.execute('rm ' .. current_output_path)
-  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  -- save result
+  if self.configuration.camera_location_mode == 'onboard' then
+    file_output_path = path.join(output_path, 'HandEye.t7')
+    torch.save(file_output_path, bestHESolution)
+    link_target = path.join('..', self.calibration_folder_name, 'HandEye.t7')
+    current_output_path = path.join(self.current_path, 'HandEye.t7')
+    os.execute('rm ' .. current_output_path)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    self.H_camera_to_tcp = bestHESolution
+  else
+    file_output_path = path.join(output_path, 'HandPattern.t7')
+    torch.save(file_output_path, bestHESolution)
+    link_target = path.join('..', self.calibration_folder_name, 'HandPattern.t7')
+    current_output_path = path.join(self.current_path, 'HandPattern.t7')
+    os.execute('rm ' .. current_output_path)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    self.H_pattern_to_tcp = bestHESolution
+  end
 
-  --torch.save(output_path .. "/Hc_patternToCam.t7", Hc)
-  file_output_path = path.join(output_path, 'Hc_patternToCam.t7')
-  torch.save(file_output_path, Hc)
-  link_target = path.join('..', self.calibration_folder_name, 'Hc_patternToCam.t7')
-  current_output_path = path.join(self.current_path, 'Hc_patternToCam.t7')
-  os.execute('rm ' .. current_output_path)
-  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  if self.configuration.camera_location_mode == 'onboard' then
+    file_output_path = path.join(output_path, 'Hc_patternToCam.t7')
+    torch.save(file_output_path, Hc)
+    link_target = path.join('..', self.calibration_folder_name, 'Hc_patternToCam.t7')
+    current_output_path = path.join(self.current_path, 'Hc_patternToCam.t7')
+    os.execute('rm ' .. current_output_path)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  else
+    file_output_path = path.join(output_path, 'Hc_camToPattern.t7')
+    torch.save(file_output_path, Hc)
+    link_target = path.join('..', self.calibration_folder_name, 'Hc_camToPattern.t7')
+    current_output_path = path.join(self.current_path, 'Hc_camToPattern.t7')
+    os.execute('rm ' .. current_output_path)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  end
 
-
-  --torch.save(output_path .. "/Hg_tcpToBase.t7", Hg)
   file_output_path = path.join(output_path, 'Hg_tcpToBase.t7')
   torch.save(file_output_path, Hg)
   link_target = path.join('..', self.calibration_folder_name, 'Hg_tcpToBase.t7')
@@ -673,62 +369,62 @@ function HandEye:calibrate(imgData)
 
   -- create links at the 'current' folder
 
-
-  -- Calculate ScanCam <-> RobotBase Transformation:
-  --------------------------------------------------
-  print("base -> camera trafo (i.e. camera pose in base coordinates):")
-  --for i=1,#Hc do
-  --  print(Hg[i] * H * Hc[i])
-  --end
-
-
-  camBaseTrafo = Hg[1] * bestHESolution * Hc[1]
-  print(camBaseTrafo)
-  print('publish tf world_frame_id camera_left')
-  -- publish
-  for  i = 1, 10 do
-    self.debug:publishTf(camBaseTrafo, world_frame_id, left_camera_frame_id)
-  end
-  print('publish tf camera_left pattern')
-  self.debug:publishTf(torch.inverse(Hc[#Hc]), left_camera_frame_id, pattern_frame_id)
-
-  -- Switch between left/right cam:
-  ---------------------------------
-  --torch.save(path .. "LeftCamBase.t7", camBaseTrafo)
-  file_output_path = path.join(output_path, 'LeftCamBase.t7')
-  torch.save(file_output_path, camBaseTrafo)
-  link_target = path.join('..', self.calibration_folder_name, 'LeftCamBase.t7')
-  current_output_path = path.join(self.current_path, 'LeftCamBase.t7')
-  os.execute('rm ' .. current_output_path)
-  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-
-  -- request the tf to the torso link (if it exists)
-  print('requesting tf from camera left to torso...')
-  local tf_available, H_cam_to_torso_tf = self.debug:requestTf(left_camera_frame_id, torso_frame_id)
-  current_output_path = path.join(self.current_path, 'LeftCamTorso.t7')
-  os.execute('rm ' .. current_output_path)
-  if not tf_available then
-    print('tf not available! '..left_camera_frame_id..' to '..torso_frame_id)
-  else
-    local H_cam_to_torso = H_cam_to_torso_tf:toTensor()
-    file_output_path = path.join(output_path, 'LeftCamTorso.t7')
-    torch.save(file_output_path, H_cam_to_torso)
-    link_target = path.join('..', self.calibration_folder_name, 'LeftCamTorso.t7')
+  -- calculate camera/pattern pose in base coordinates  
+  if self.configuration.camera_location_mode == 'onboard' then
+    local patternBaseTrafo = Hg[1] * bestHESolution * Hc[1]
+    print("base -> pattern trafo (i.e. pattern pose in base coordinates):")
+    print(patternBaseTrafo)
+    self.H_pattern_to_base = patternBaseTrafo
+    file_output_path = path.join(output_path, 'PatternBase.t7')
+    torch.save(file_output_path, patternBaseTrafo)
+    link_target = path.join('..', self.calibration_folder_name, 'PatternBase.t7')
+    current_output_path = path.join(self.current_path, 'PatternBase.t7')
+    os.execute('rm ' .. current_output_path)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-    self.H_cam_to_torso = H_cam_to_torso
-  end
+    return bestHESolution, patternBaseTrafo
+  else
+    local cameraBaseTrafo = Hg[1] * bestHESolution * Hc[1]
+    print("base -> camera trafo (i.e. camera pose in base coordinates):")
+    print(cameraBaseTrafo)
+    self.H_cam_to_base = cameraBaseTrafo
 
-  self.H_pattern_to_tcp = bestHESolution
-  self.H_cam_to_base = camBaseTrafo
+    print('publish tf world_frame_id camera_left')
+    -- publish
+    for  i = 1, 10 do
+      self.debug:publishTf(cameraBaseTrafo, world_frame_id, left_camera_frame_id)
+    end
+    print('publish tf camera_left pattern')
+    self.debug:publishTf(torch.inverse(Hc[#Hc]), left_camera_frame_id, pattern_frame_id)
 
-  return bestHESolution, camBaseTrafo
+    file_output_path = path.join(output_path, 'LeftCamBase.t7')
+    torch.save(file_output_path, cameraBaseTrafo)
+    link_target = path.join('..', self.calibration_folder_name, 'LeftCamBase.t7')
+    current_output_path = path.join(self.current_path, 'LeftCamBase.t7')
+    os.execute('rm ' .. current_output_path)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+
+    -- request the tf to the torso link (if it exists)
+    print('requesting tf from camera left to torso...')
+    local tf_available, H_cam_to_torso_tf = self.debug:requestTf(left_camera_frame_id, torso_frame_id)
+    current_output_path = path.join(self.current_path, 'LeftCamTorso.t7')
+    os.execute('rm ' .. current_output_path)
+    if not tf_available then
+      print('tf not available! '..left_camera_frame_id..' to '..torso_frame_id)
+    else
+      local H_cam_to_torso = H_cam_to_torso_tf:toTensor()
+      file_output_path = path.join(output_path, 'LeftCamTorso.t7')
+      torch.save(file_output_path, H_cam_to_torso)
+      link_target = path.join('..', self.calibration_folder_name, 'LeftCamTorso.t7')
+      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+      self.H_cam_to_torso = H_cam_to_torso
+    end
+    return bestHESolution, cameraBaseTrafo
+  end 
 end
 
 
---
 -- captures a pair of stereo images
--- detects the pattern using the stereo method, and publishes a tf with its pose
---
+-- detects the cameraPatternTrafo using the stereo method, and publishes a tf with its pose
 function HandEye:detectPattern()
   --1. capture pair of images
   local left_camera_config = self.configuration.cameras[self.configuration.left_camera_id]
@@ -736,52 +432,25 @@ function HandEye:detectPattern()
   left_img = self:captureImageNoWait(left_camera_config)
   right_img = self:captureImageNoWait(right_camera_config)
 
-  --local ok, pattern_pose = self:calcPatternPoseRelativeToCam(
-  --  left_img,
-  --  right_img,
-  --  'left')
-  local ok, pattern_pose = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+  --[[ only for testing cases
+  local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
+  nr = 4 --#self.configuration.capture_poses
+  left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+  right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+  left_img = cv.imread{left_img_path}
+  right_img = cv.imread{right_img_path}
+  ]]
+
+  local ok, cameraPatternTrafo = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
   if not ok then
     self.debug:publishImg(left_img)
     return nil
   end
 
   for i = 1, 20 do
-    self.debug:publishTf(pattern_pose,'camera_left', pattern_frame_id)
+    self.debug:publishTf(cameraPatternTrafo,'camera_left', pattern_frame_id)
   end
-  print('pattern pose=', pattern_pose)
-  return pattern_pose
-
-end
-
-
-function HandEye:movePatternTests()
-  local files_path = self.current_path
-  print('Calling HandEye:movePattern() method')
-  --if the calibration data is missing, read it from the file
-  if self.H_pattern_to_tcp == nil or self.H_cam_to_base == nil then
-    self.H_cam_to_base = torch.load(files_path .. "/LeftCamBase.t7")
-    self.H_pattern_to_tcp = torch.load(files_path .. "/HandPattern.t7")
-  end
-
-  --1. move to the last posture of the taught capture postures
-  local last_pose = self.configuration.capture_poses[#self.configuration.capture_poses]
-  self.move_group:moveJ(last_pose)
-
-  --2. estimate the pose of the pattern
-  local left_camera_config = self.configuration.cameras[self.configuration.left_camera_id]
-  local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
-  left_img = self:captureImageNoWait(left_camera_config)
-  right_img = self:captureImageNoWait(right_camera_config)
-  self.debug:publishImg(left_img)
-
-  --local ok, pattern_pose = self:calcPatternPoseRelativeToCam(
-  --  left_img,
-  --  right_img,
-  --  'left')
-  local ok, pattern_pose = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
-
-  self.debug:publishTf(pattern_pose,'camera_left', 'pattern')
+  return cameraPatternTrafo
 end
 
 
@@ -803,110 +472,127 @@ function HandEye:generateRelativeTranslation(O)
   local x_offset = 0.0
   local y_offset = 0.0
   local z_offset = 0.0
-
   H = torch.eye(4,4)
   H[1][4] = x_offset
   H[2][4] = y_offset
   H[3][4] = z_offset
-
   return O*H
 end
 
 
-
+-- captures a pair of stereo images
+-- detects the cameraPatternTrafo using the stereo method
+-- predicts the cameraPatternTrafo for the case of a robot motion
+-- performs the robot motion
 function HandEye:movePattern()
   -- set the folder to 'current'
   local files_path = self.current_path
   print('Calling HandEye:movePattern() method')
   --if the calibration data is missing, read it from the file
-  if self.H_pattern_to_tcp == nil or self.H_cam_to_base == nil then
-    self.H_cam_to_base = torch.load(files_path .. "/LeftCamBase.t7")
-    self.H_pattern_to_tcp = torch.load(files_path .. "/HandPattern.t7")
+  if self.configuration.camera_location_mode == 'onboard' then
+    if self.H_camera_to_tcp == nil or self.H_pattern_to_base == nil then
+      self.H_pattern_to_base = torch.load(files_path .. "/PatternBase.t7")
+      self.H_camera_to_tcp = torch.load(files_path .. "/HandEye.t7")
+    end
+  else
+    if self.H_pattern_to_tcp == nil or self.H_cam_to_base == nil then
+      self.H_cam_to_base = torch.load(files_path .. "/LeftCamBase.t7")
+      self.H_pattern_to_tcp = torch.load(files_path .. "/HandPattern.t7")
+    end
   end
 
   --1. move to the last posture of the taught capture postures
   local last_pose = self.configuration.capture_poses[#self.configuration.capture_poses]
+  print("Moving to the last pose of the taught capture poses ...")
   self.move_group:moveJ(last_pose)
 
   --2. estimate the pose of the pattern (i.e. the last capture pose)
   local left_camera_config = self.configuration.cameras[self.configuration.left_camera_id]
   local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
 
-  --local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
-  --nr = #self.configuration.capture_poses
-  --left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-  --right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-  --print("left_img_path:")
-  --print(left_img_path)
-  --print("right_img_path:")
-  --print(right_img_path)
-  --left_img = cv.imread{left_img_path}
-  --right_img = cv.imread{right_img_path}
+  --[[ only for testing cases
+  local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
+  nr = 2 --#self.configuration.capture_poses
+  left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+  right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+  left_img = cv.imread{left_img_path}
+  right_img = cv.imread{right_img_path}
+  ]]
 
   left_img = self:captureImageNoWait(left_camera_config)
   right_img = self:captureImageNoWait(right_camera_config)
   self.debug:publishImg(left_img)
 
-  --local ok, pattern_pose_cam_coords = self:calcPatternPoseRelativeToCam(
-  --  left_img,
-  --  right_img,
-  --  'left')
-  local ok, pattern_pose_cam_coords = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+  local ok, cameraPatternTrafo = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
   if not ok then
     print('pattern not found!')
-    return ok, pattern_pose_cam_coords
+    return ok, cameraPatternTrafo
   end
 
-  print('detected pattern before motion:')
-  print(pattern_pose_cam_coords)
-  self.debug:publishTf(pattern_pose_cam_coords,'camera_left', 'pattern')
-  self.debug:publishTf(pattern_pose_cam_coords,'camera_left', 'pattern')
-  self.debug:publishTf(pattern_pose_cam_coords,'camera_left', 'pattern')
+  print('detected cameraPatternTrafo before motion:')
+  print(cameraPatternTrafo)
+  self.debug:publishTf(cameraPatternTrafo, 'camera_left', 'pattern')
 
-  if self.H_pattern_to_tcp ~= nil and self.H_cam_to_base ~= nil then
-    print('about to do a movement..')
-
-    -- b_H_c : camera pose in base_link coordinates
-    -- g_H_p : pattern pose in tcp coordinates
-
-    pattern_transformation = self:generateRelativeRotation()
-    pattern_transformation = self:generateRelativeTranslation(pattern_transformation)
-    --pattern_transformation = self:generateRelativeTranslation()
-    self.debug:publishTf(pattern_transformation,'pattern', 'pattern_shift')
-    self.debug:publishTf(pattern_transformation,'pattern', 'pattern_shift')
-    self.debug:publishTf(pattern_transformation,'pattern', 'pattern_shift')
-
-    self.predicted_pattern_pose_cam_coords = pattern_pose_cam_coords*pattern_transformation
-    print('predicted pattern in camera_left coords:')
-    print(self.predicted_pattern_pose_cam_coords)
-    print('compare with the next pattern detection:')
-
-    --self.debug:publishTf(R,'pattern', 'pattern_rotation')
-
-    -- (new pose of the pattern in tcp coords) => invert to have the tcp coordinates in the new pattern pose frame of reference => multiply by H_pattern_to_tcp
-    -- to get the desired tcp pose in tcp frame of reference
-
-    --pose_tcp = self.H_pattern_to_tcp * torch.inverse( self.H_pattern_to_tcp * pose_pattern)
-    pose_tcp = self.H_pattern_to_tcp * (pattern_transformation * torch.inverse( self.H_pattern_to_tcp))
-    local stampedTransfDesiredTcp = self.debug:publishTf(pose_tcp,self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
-    self.debug:publishTf(pose_tcp,self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
-    self.debug:publishTf(pose_tcp,self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
-
-    local collision_check = true
-    self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check) --  aendert sich noch!!!
-    --self.end_effector:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check)
-
-    return ok, self.predicted_pattern_pose_cam_coords
-
-  else
-    print('please calibrate the robot first')
+  -- Now we compute a relative transformation (corresponding to a motion of the robot)
+  -- and compute (i.e. predict) the cameraPatternTrafo after this motion.
+  if self.configuration.camera_location_mode == 'onboard' then -- 'onboard' camera setup
+    if self.H_camera_to_tcp ~= nil and self.H_pattern_to_base ~= nil then
+      print('about to do a movement..')
+      -- b_H_c : pattern pose in base_link coordinates
+      -- g_H_p : camera pose in tcp coordinates
+      relative_transformation = self:generateRelativeRotation()
+      relative_transformation = self:generateRelativeTranslation(relative_transformation)
+      self.debug:publishTf(relative_transformation, 'left_cam', 'left_cam_shift')
+      self.debug:publishTf(relative_transformation, 'left_cam', 'left_cam_shift')
+      self.debug:publishTf(relative_transformation, 'left_cam', 'left_cam_shift')
+      self.predicted_cameraPatternTrafo = cameraPatternTrafo*relative_transformation
+      print('prediction for cameraPatternTrafo after motion:')
+      print(self.predicted_cameraPatternTrafo)
+      print('compare with the next pattern detection:')
+      pose_tcp = self.H_camera_to_tcp * (relative_transformation * torch.inverse(self.H_camera_to_tcp))
+      local stampedTransfDesiredTcp = self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
+      --self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
+      --self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
+      local collision_check = true
+      print("Moving the robot slightly ...")
+      self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check)
+      return ok, self.predicted_cameraPatternTrafo
+    else
+      print('please calibrate the robot first')
+    end
+  else -- 'extern' camera setup
+    if self.H_pattern_to_tcp ~= nil and self.H_cam_to_base ~= nil then
+      print('about to do a movement..')
+      -- b_H_c : camera pose in base_link coordinates
+      -- g_H_p : pattern pose in tcp coordinates
+      relative_transformation = self:generateRelativeRotation()
+      relative_transformation = self:generateRelativeTranslation(relative_transformation)
+      --transformation = self:generateRelativeTranslation()
+      self.debug:publishTf(relative_transformation, 'pattern', 'pattern_shift')
+      self.debug:publishTf(relative_transformation, 'pattern', 'pattern_shift')
+      self.debug:publishTf(relative_transformation, 'pattern', 'pattern_shift')
+      self.predicted_cameraPatternTrafo = cameraPatternTrafo*relative_transformation
+      print('prediction for cameraPatternTrafo after motion:')
+      print(self.predicted_cameraPatternTrafo)
+      print('compare with the next pattern detection:')
+      pose_tcp = self.H_pattern_to_tcp * (relative_transformation * torch.inverse(self.H_pattern_to_tcp))
+      local stampedTransfDesiredTcp = self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
+      --self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
+      --self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
+      local collision_check = true
+      print("Moving the robot slightly ...")
+      self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check)
+      return ok, self.predicted_cameraPatternTrafo
+    else
+      print('please calibrate the robot first')
+    end
   end
 end
 
 
 function HandEye:evaluateCalibration()
   print('HandEye:evaluateCalibration()')
-  local ok, prediction = self:movePattern() -- stores the predicted pose of the pattern at self.predicted_pattern_pose_cam_coords and returns it
+  local ok, prediction = self:movePattern() -- stores the predicted pose of the pattern at self.predicted_cameraPatternTrafo and returns it
   if not ok then
     print('aborting evaluation')
     return
@@ -916,8 +602,8 @@ function HandEye:evaluateCalibration()
     print('pattern not detected, aborting evaluation')
     return
   end
-
-  print('detected pattern after motion=', detection)
+  print('detected cameraPatternTrafo after motion:')
+  print(detection)
 
   --compute some metric
   local H1 = tf.Transform.new()
@@ -927,21 +613,31 @@ function HandEye:evaluateCalibration()
   local R1 = prediction[{{1,3}, {1,3}}]
   local R2 = detection[{{1,3}, {1,3}}]
 
+  -- translation error (norm of difference)
   local err_t = torch.norm(prediction[{{1,4}, {4}}] - detection[{{1,4}, {4}}])
+  -- translation error for each axis
   local err_axes = prediction[{{1,4}, {4}}] - detection[{{1,4}, {4}}]
+  -- rotation error (norm of difference of Euler angles)
   local err_r = torch.norm(H1:getRotation():toTensor() - H2:getRotation():toTensor())
 
-  --from http://cmp.felk.cvut.cz/~hodanto2/data/hodan2016evaluation.pdf
+  -- from http://cmp.felk.cvut.cz/~hodanto2/data/hodan2016evaluation.pdf
   -- error given  by  the  angle  from  the  axis–angle  representation  of rotation (how to interpret it?)
-  -- the angle of rotation of a matrix R in the axis–angle representation is given by arc cos ( {Tr(R) -1} /2)
-  -- if R1 and R2 are ~ => R1 *R2.inv() = ~Identity => angle of rotation = 0 => arc cos (0) = pi/2 = 1.57..
+  -- the angle of rotation of a matrix R in the axis–angle representation is given by arccos( {Tr(R) -1} /2)
+  -- if R1 ~= R2 => R1 * R2.inv() ~= Identity => angle of rotation ~= 0 
+  -- => arccos(angle of rotation) ~= pi/2 = 1.57..
   local err_r2 = torch.acos( torch.trace(R1* torch.inverse(R2) -1) / 2 )
 
-  print('euler angles prediction=', H1:getRotation():toTensor(), ' euler angles detection=', H2:getRotation():toTensor())
-  print('error metric translation=', err_t, ' rotation (norm of diff. of Euler angles)=', err_r)
-  print('error on each axis= ', err_axes)
-  print('orientation error metric #2 =', err_r2)
-
+  print('translation error (norm of difference) [in m]:', err_t, ' ( = ', err_t * 1000, ' mm)')
+  print('translation error for each axis [in m]:')
+  print(err_axes)
+  
+  print('euler angles prediction:')
+  print(H1:getRotation():toTensor())
+  print('euler angles detection:')
+  print(H2:getRotation():toTensor())
+  print('rotation error (norm of difference of Euler angles):', err_r)
+  err_r3 = torch.abs(err_r2 - M_PI/2)
+  print('rotation error metric #2 [in radians]:', err_r3, ' ( = ', err_r3 * 180/M_PI, ' degree)')
 end
 
 
