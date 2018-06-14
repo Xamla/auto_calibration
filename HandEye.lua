@@ -6,6 +6,7 @@
   * Only working with our standard calibration pattern (circle pattern of id 21)
   * Only tested with UR5 and SDA10D (especially if we have more than one move group, the current implementation will probably only work with an SDA)
   * Only working with ximea cameras
+  * The "evaluateCalibration" function only evaluates the calculation of the "Camera<->Pattern transformation via plane fit. The TCP<->Pattern transformation (or TCP<->Camera transformation in case of 'onboard') is not evaluated.
 ]]
 local xamla3d = require 'xamla3d'
 local calib = require 'handEyeCalibration'
@@ -590,6 +591,10 @@ function HandEye:movePattern()
 end
 
 
+-- Here, only the function "patternLocalizer:calcCamPoseViaPlaneFit" is evaluated,
+-- i.e the calculation of the "Camera<->Pattern transformation.
+-- Note: The TCP<->Pattern transformation (or TCP<->Camera transformation in case of 'onboard')
+--       is not evaluated here.
 function HandEye:evaluateCalibration()
   print('HandEye:evaluateCalibration()')
   local ok, prediction = self:movePattern() -- stores the predicted pose of the pattern at self.predicted_cameraPatternTrafo and returns it
