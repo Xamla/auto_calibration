@@ -168,7 +168,7 @@ local function editPoseList(pos_list)
   for i=1,#pos_list do
     printf('Moveing to pos #%d...', i)
     local q = pos_list[i]
-    move_group:moveJ(q)
+    move_group:moveJoints(q)
     last_q = definePos(pos_list, last_q, i)
     if last_q == nil then
       return nil -- abort

@@ -1,5 +1,5 @@
 --[[
-  Hand-Pattern or Hand-Eye calibration, depending on if we have an extern 
+  Hand-Pattern or Hand-Eye calibration, depending on if we have an extern
   or an onboard camera setup.
   Current limitations:
   * Only working with stereo camera setup
@@ -102,7 +102,7 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
 
   self.move_groups = self.motion_service:getMoveGroup()  -- If no name is specified first move group is used (and this is linked to all endeffectors)
   self.rc = self:getEndEffectors(self.move_groups) -- gets all endeffectors of the first move group
-  
+
   self.right_move_group, self.left_move_group, self.both_move_group, self.xamla_mg_both = nil, nil, nil, nil
   if self.rc ~= nil then
     self.right_move_group = self.motion_service:getMoveGroup(self.rc.right_move_group_name)
@@ -289,7 +289,7 @@ function HandEye:calibrate(imgData)
     end
   end
 
-  -- H = pose of the pattern/camera in TCP coordinate frame 
+  -- H = pose of the pattern/camera in TCP coordinate frame
   -- 'extern' camera setup: pattern pose in tcp coordinates
   -- 'onboard' camera setup: camera pose in tcp coordinates
   local H, res, res_angle = calib.calibrate(Hg, Hc)
@@ -370,7 +370,7 @@ function HandEye:calibrate(imgData)
 
   -- create links at the 'current' folder
 
-  -- calculate camera/pattern pose in base coordinates  
+  -- calculate camera/pattern pose in base coordinates
   if self.configuration.camera_location_mode == 'onboard' then
     local patternBaseTrafo = Hg[1] * bestHESolution * Hc[1]
     print("base -> pattern trafo (i.e. pattern pose in base coordinates):")
@@ -420,7 +420,7 @@ function HandEye:calibrate(imgData)
       self.H_cam_to_torso = H_cam_to_torso
     end
     return bestHESolution, cameraBaseTrafo
-  end 
+  end
 end
 
 
@@ -505,7 +505,7 @@ function HandEye:movePattern()
   --1. move to the last posture of the taught capture postures
   local last_pose = self.configuration.capture_poses[#self.configuration.capture_poses]
   print("Moving to the last pose of the taught capture poses ...")
-  self.move_group:moveJ(last_pose)
+  self.move_group:moveJoints(last_pose)
 
   --2. estimate the pose of the pattern (i.e. the last capture pose)
   local left_camera_config = self.configuration.cameras[self.configuration.left_camera_id]
@@ -628,14 +628,14 @@ function HandEye:evaluateCalibration()
   -- from http://cmp.felk.cvut.cz/~hodanto2/data/hodan2016evaluation.pdf
   -- error given  by  the  angle  from  the  axis–angle  representation  of rotation (how to interpret it?)
   -- the angle of rotation of a matrix R in the axis–angle representation is given by arccos( {Tr(R) -1} /2)
-  -- if R1 ~= R2 => R1 * R2.inv() ~= Identity => angle of rotation ~= 0 
+  -- if R1 ~= R2 => R1 * R2.inv() ~= Identity => angle of rotation ~= 0
   -- => arccos(angle of rotation) ~= pi/2 = 1.57..
   local err_r2 = torch.acos( torch.trace(R1* torch.inverse(R2) -1) / 2 )
 
   print('translation error (norm of difference) [in m]:', err_t, ' ( = ', err_t * 1000, ' mm)')
   print('translation error for each axis [in m]:')
   print(err_axes)
-  
+
   print('euler angles prediction:')
   print(H1:getRotation():toTensor())
   print('euler angles detection:')
@@ -1107,7 +1107,7 @@ end
 function HandEye:moveToStart()
   local base_poses = self.configuration.base_poses
   assert(base_poses ~= nil)
-  self.move_group:moveJ(base_poses['start'])
+  self.move_group:moveJoints(base_poses['start'])
 end
 
 
@@ -1120,9 +1120,10 @@ function HandEye:moveLToTf(target_tf)
 
   print('self.configuration.velocity_scaling')
   print(self.configuration.velocity_scaling)
-  --self.move_group:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions)
-  self.xamla_mg:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions) -- aendert sich noch!!!
-  --self.end_effector:moveL(self.tcp_end_effector_name, target_tf, self.configuration.velocity_scaling, check_for_collisions)
+  local xamla_ee = xamla_mg:getEndEffector(self.tcp_end_effector_name)
+  local tmp_pos = datatypes.Pose()
+  tmp_pose.StampedTransform:setData(target_tf)
+  xamla_ee:movePoseLinear(tmp_pose, self.configuration.velocity_scaling, check_for_collisions) -- aendert sich noch!!!
 
 end
 
@@ -1147,6 +1148,7 @@ function HandEye:moveLToTfSupervised(target_tf)
   -- move there
   local check_for_collisions = true
   local velocity_scaling = 1
+  local accelerationScaling = 1
   local do_interaction = true
 
   local function done_cb(state, result)
@@ -1156,9 +1158,11 @@ function HandEye:moveLToTfSupervised(target_tf)
     result_payload = result
   end
 
+  local xamla_ee = xamla_mg:getEndEffector(self.tcp_end_effector_name)
+  local tmp_pos = datatypes.Pose()
+  tmp_pose.StampedTransform:setData(target_tf)
 
-  local handle = self.xamla_mg:moveLSupervised(self.tcp_end_effector_name, Tf, velocity_scaling, check_for_collisions, done_cb) -- aendert sich evtl. noch!!!
-  --local handle = self.end_effector:moveLSupervised(self.tcp_end_effector_name, Tf, velocity_scaling, check_for_collisions, done_cb)
+  local handle = xamla_ee:movePoseLinearSupervised(tmp_pose, velocity_scaling, check_for_collisions, accelerationScaling, done_cb) -- aendert sich evtl. noch!!!
   assert(torch.isTypeOf(handle, motionLibrary.SteppedMotionClient))
 
   local input
@@ -1265,6 +1269,16 @@ function HandEye:moveToInitPoseSupervised()
 
 end
 
+local function computIK(self, Tf, tcp_end_effector_name)
+  local end_effector = self.move_group:getEndEffector(tcp_end_effector_name)
+  local motion_service = self.move_group.motion_service
+  local plan_parameters = self.move_group:buildPlanParameters()
+  local tmp_pose = datatypes.Pose()
+  tmp_pose.StampedTransform:setData(Tf)
+  local err, solution = motion_service:queryIK(tmp_pose, plan_parameters, self.move_group:getCurrentJointValues(), end_effector.link_name)
+  assert(err[1].val == 1)
+  return datatypes.JointValues(datatypes.JointSet(solution.joint_names), solution.solutions[1])
+end
 
 function HandEye:movePToTf(Tf)
 
@@ -1277,10 +1291,10 @@ function HandEye:movePToTf(Tf)
   H_desired_stamped:set_frame_id(world_frame_id)
   H_desired_stamped:set_child_frame_id(self.tcp_frame_of_reference)
   self.debug:publishTf(H_desired_stamped:toTensor(), world_frame_id, 'desired_tcp')
-
+  local res = computIK(self, H_desired_stamped, tcp_end_effector_name)
   -- move there
   local collision_check = true
-  self.move_group:moveP(self.tcp_end_effector_name, H_desired_stamped, self.configuration.velocity_scaling, collision_check)
+  self.move_group:moveJoints(res, self.configuration.velocity_scaling, collision_check)
 
 end
 

@@ -171,7 +171,7 @@ end
 
 local function moveJ(self, pos)
   assert(pos ~= nil, 'Target position is nil.')
-  self.move_group:moveJ(pos)
+  self.move_group:moveJoints(pos)
   --check that we arrived where we expected
   local curPose = self.move_group:getCurrentPose():toTensor()
   local curJoints = self.move_group:getCurrentJointValues()
@@ -196,7 +196,7 @@ end
 
 function AutoCalibration:pickCalibrationTarget()
   self.gripper:home()
-  print('close the gripper') 
+  print('close the gripper')
   self.gripper:move{width=0.0, speed=0.2, force=20, stop_on_block=false} -- move closed
   local base_poses = self.configuration.base_poses
   assert(base_poses ~= nil, 'Base poses are not defined.')
@@ -279,7 +279,7 @@ end
 
 function AutoCalibration:closeGripper()
   if self.gripper ~= nil then
-    print('close the gripper') 
+    print('close the gripper')
     self.gripper:move{width=0.0, speed=0.2, force=20, stop_on_block=false} -- move closed
   else
     print('Need to initialize the gripper')
@@ -295,8 +295,8 @@ function AutoCalibration:openGripper()
     print('Need to initialize the gripper')
   end
 end
-	
-	
+
+
 function AutoCalibration:homeGripper()
   if self.gripper ~= nil then
     print('Homeing gripper')
@@ -444,7 +444,7 @@ function AutoCalibration:runCaptureSequence()
 
     printf('Structured light initializaton returned: %d', result)
   end
-  
+
   for i,p in ipairs(pos_list) do
 
     printf('Moving to position #%d...', i)
