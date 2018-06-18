@@ -21,10 +21,12 @@ local autoCalibration = require 'autoCalibration_env'
 local CalibrationMode = autoCalibration.CalibrationMode
 local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
 require 'ximea.ros.XimeaClient'
+require 'GenICamClient'
+
 require 'AutoCalibration'
 local HandEye = require 'HandEye'
 
-local offline = true  -- in case we are reading images from files and not really connecting to the driver set offline to true
+local offline = false --true  -- in case we are reading images from files and not really connecting to the driver set offline to true
 
 
 local prompt
@@ -551,6 +553,16 @@ local function main(nh)
 
   configuration = torch.load(filename)
 
+  camera_client = {}
+  -- in case we are reading images from files and not really connecting to the driver set offline to true
+  if not offline then
+    if configuration.camera_type == 'ximea' then
+      camera_client = XimeaClient(nh, 'ximea_mono', false, false)
+    elseif configuration.camera_type == 'genicam' then
+      camera_client = GenICamClient(nh, 'genicam_mono', false, false)
+    end
+  end
+
   if not validateConfiguration() then
     print("Configuration not valid. Use the 'configureCalibration' script to create a valid configuration.")
     return
@@ -563,9 +575,14 @@ local function main(nh)
   local motion_service = motionLibrary.MotionService(nh)
   local xamla_mg = motionLibrary.MoveGroup(motion_service, configuration.move_group_name) -- motion client
 
-  auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, ximea_client)
+  auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, camera_client)
   hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, motion_service, ximea_client, auto_calibration.gripper, xamla_mg)
   showMainMenu()
+
+  -- shutdown system
+  if not offline then
+    camera_client:shutdown()
+  end
 end
 
 
@@ -577,11 +594,6 @@ local function init()
   sp:start()
 
   motion_service = motionLibrary.MotionService(nh)
-  ximea_client = {}
-  -- in case we are reading images from files and not really connecting to the driver set offline to true
-  if not offline then
-    ximea_client = XimeaClient(nh, 'ximea_mono', false, false)
-  end
 
   prompt = xutils.Prompt()
   prompt:enableRawTerminal()
@@ -593,9 +605,6 @@ local function init()
   end
 
   motion_service:shutdown()
-  if not offline then
-    ximea_client:shutdown()
-  end
   sp:stop()
   ros.shutdown()
 end

@@ -161,9 +161,9 @@ end
 
 function HandEye:getEndEffectorName()
   local move_group_names, move_group_details = self.move_group.motion_service:queryAvailableMoveGroups()
-  print('HandEye:getEndEffectorName() move_group_names, move_group_details')
+  print('HandEye:getEndEffectorName() move_group_names')
   print(move_group_names)
-  print(move_group_details)
+  --print(move_group_details)
 
   -- find out the index of the selected move_group
   local index = 1

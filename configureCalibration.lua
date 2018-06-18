@@ -24,13 +24,15 @@ local CalibrationMode = autoCalibration.CalibrationMode
 local CalibrationFlags = autoCalibration.CalibrationFlags
 local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
 require 'ximea.ros.XimeaClient'
+require 'GenICamClient'
 require 'AutoCalibration'
 
 local grippers = require 'xamlamoveit.grippers.env'
 local index_grippers = {} --index each gripper with an int
 
 
-local GET_CONNECTED_DEVICES_SERVICE_NAME = '/ximea_mono/get_connected_devices'
+local GET_CONNECTED_XIMEA_DEVICES_SERVICE_NAME = '/ximea_mono/get_connected_devices'
+local GET_CONNECTED_GENICAM_DEVICES_SERVICE_NAME = 'camera_aravis_node/getconnecteddevices'
 local DEFAULT_CAMERA_ID = 'left'
 local DEFAULT_EXPOSURE = 120000
 local DEFAULT_SLEEP_BEFORE_CAPTURE = 1.0
@@ -40,10 +42,10 @@ local RIGHT_CAMERA_ID = 'right'
 local motion_service -- motion service
 local move_group -- move group
 local auto_calibration
-local ximea_client -- ximea client
+local camera_client -- camera client
 local prompt
 local move_group_names, move_group_details
-local ximea_serials
+local camera_serials
 local filename = 'configuration.t7'
 
 
@@ -75,7 +77,8 @@ local configuration = {
   base_poses = {},
   capture_poses = {},
   gripper_key = '',
-  camera_location_mode = 'extern'
+  camera_location_mode = 'extern',
+  camera_type = 'ximea',
 }
 
 
@@ -103,19 +106,45 @@ local function selectGripper()
 end
 
 
+local function setCameraType(key)
+  configuration.camera_type = key
+  printf('New selected camera type: %s', configuration.camera_type)
+  prompt:anyKey()
+end
+
+
+local function selectCameraType()
+  local menu_options = {}
+  menu_options[1] = { '1', 'ximea', function() setCameraType('ximea') return false end}
+  menu_options[2] = { '2', 'genicam', function() setCameraType('genicam') return false end}
+  menu_options[3] = { 'ESC', 'Quit', false }
+  prompt:showMenu('Camera Type Selction', menu_options)
+end
+
+
 local function getCameraIds()
   return table.keys(configuration.cameras)
 end
 
 
-local function queryXimeaSerials(nh)
-  local getConnectedDevices = nh:serviceClient(GET_CONNECTED_DEVICES_SERVICE_NAME, ros.SrvSpec('ximea_msgs/GetConnectedDevices'), false)
-  local response = getConnectedDevices:call()
-  getConnectedDevices:shutdown()
-  if response == nil then
-    return {}
+local function queryCameraSerials(nh)
+  if configuration.camera_type == 'ximea' then
+    local getConnectedDevices = nh:serviceClient(GET_CONNECTED_XIMEA_DEVICES_SERVICE_NAME, ros.SrvSpec('ximea_msgs/GetConnectedDevices'), false)
+    local response = getConnectedDevices:call()
+    getConnectedDevices:shutdown()
+    if response == nil then
+      return {}
+    end
+    return response.serials
+  elseif configuration.camera_type == 'genicam' then
+    local getConnectedDevices = nh:serviceClient(GET_CONNECTED_GENICAM_DEVICES_SERVICE_NAME, ros.SrvSpec('camera_aravis/GetConnectedDevices'), false)
+    local response = getConnectedDevices:call()
+    getConnectedDevices:shutdown()
+    if response == nil then
+      return {}
+    end
+    return response.serials
   end
-  return response.serials
 end
 
 
@@ -354,7 +383,7 @@ end
 local function createMoveGroup()
   move_group = motion_service:getMoveGroup(configuration.move_group_name)
   move_group:setVelocityScaling(0.2)
-  auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, ximea_client)
+  auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, camera_client)
 end
 
 
@@ -514,14 +543,14 @@ end
 local function addCameraConfiguration()
   prompt:printTitle('Add Camera')
   local default_id = 'right'
-  if ximea_serials ~= nil and #ximea_serials > 0 then
+  if camera_serials ~= nil and #camera_serials > 0 then
     printf("Enter ID of new camera configuration (default '%s'):", default_id)
     local id = prompt:readLine()
     if id == nil or #id == 0 then
       id = default_id
     end
 
-    local serial = prompt:chooseFromList(ximea_serials, 'Choose camera S/N:')
+    local serial = prompt:chooseFromList(camera_serials, 'Choose camera S/N:')
     if serial ~= nil then
       local camera_configuration = createCameraConfiguration(id, serial)
       configuration.cameras[id] = camera_configuration
@@ -553,8 +582,8 @@ end
 local function selectCameraSerial()
   prompt:printTitle('Select Camera Serial')
   printf("Selected camera S/N: %s", configuration.camera_serial or 'N/A')
-  if ximea_serials ~= nil and #ximea_serials > 0 then
-    local choice = prompt:chooseFromList(ximea_serials, 'Available Ximea cameras:')
+  if camera_serials ~= nil and #camera_serials > 0 then
+    local choice = prompt:chooseFromList(camera_serials, 'Available cameras:')
     if choice == nil then
       return
     elseif configuration.camera_serial == choice then
@@ -606,7 +635,7 @@ local function selectCamera(camera_type)
 
   local ids = getCameraIds()
   if ids ~= nil and #ids > 0 then
-    local choice = prompt:chooseFromList(ids, 'Available Ximea cameras:')
+    local choice = prompt:chooseFromList(ids, 'Available cameras:')
     if choice == nil then
       return
     else
@@ -657,6 +686,7 @@ local function showMainMenu()
       { '9', 'Dump configuration', dumpConfiguration },
       { 'c', string.format('Camera localtion selection (\'%s\' camera setup)', configuration.camera_location_mode), selectCameraLocation },
       { 'g', string.format('Gripper selection (%s)',configuration.gripper_key) , selectGripper },
+      { 't', string.format('Camera type selection (%s)',configuration.camera_type) , selectCameraType },
       { 's', 'Save configuration',  saveConfiguration },
       { 'ESC', 'Quit', false },
     }
@@ -677,27 +707,39 @@ local function main(nh)
   end
 
   -- query camera serial numbers
-  ximea_serials = {}
-  ximea_serials = queryXimeaSerials(nh)
-  if #ximea_serials > 0 and #table.keys(configuration.cameras) == 0 then
+  camera_serials = {}
+  camera_serials = queryCameraSerials(nh)
+  if next(camera_serials) == nil then
+    configuration.camera_type = 'genicam'
+    camera_serials = queryCameraSerials(nh)
+  end
+  print("camera_type:")
+  print(configuration.camera_type)
+  print("camera_serials:")
+  print(camera_serials)
+  if #camera_serials > 0 and #table.keys(configuration.cameras) == 0 then
     -- create default configuration left
-    configuration.cameras[DEFAULT_CAMERA_ID] = createCameraConfiguration(DEFAULT_CAMERA_ID, ximea_serials[1])
+    configuration.cameras[DEFAULT_CAMERA_ID] = createCameraConfiguration(DEFAULT_CAMERA_ID, camera_serials[1])
     configuration.left_camera_id = DEFAULT_CAMERA_ID
     --if there is a second camera, create the configuration for it
-    if #ximea_serials == 2 then
-      configuration.cameras[RIGHT_CAMERA_ID] = createCameraConfiguration(RIGHT_CAMERA_ID, ximea_serials[2])
+    if #camera_serials == 2 then
+      configuration.cameras[RIGHT_CAMERA_ID] = createCameraConfiguration(RIGHT_CAMERA_ID, camera_serials[2])
       configuration.right_camera_id = RIGHT_CAMERA_ID
     end
   end
 
-  if #ximea_serials > 0 then
-    ximea_client = XimeaClient(nh, 'ximea_mono', false, false)
+  if #camera_serials > 0 then
+    if configuration.camera_type == 'ximea' then
+      camera_client = XimeaClient(nh, 'ximea_mono', false, false)
+    elseif configuration.camera_type == 'genicam' then
+      camera_client = GenICamClient(nh, 'genicam_mono', false, false)
+    end
   end
 
   createMoveGroup()
 
   prompt:showList(move_group_names, 'Available MoveGroups:')
-  prompt:showList(ximea_serials, 'Available Ximea Cameras:')
+  prompt:showList(camera_serials, 'Available Cameras:')
 
   showMainMenu()
 
@@ -706,8 +748,8 @@ local function main(nh)
   end
 
   -- shutdown system
-  if ximea_client ~= nil then
-    ximea_client:shutdown()
+  if camera_client ~= nil then
+    camera_client:shutdown()
   end
 
   motion_service:shutdown()

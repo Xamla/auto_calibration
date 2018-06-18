@@ -16,6 +16,7 @@ require 'cv.highgui'
 require 'cv.calib3d'
 
 require 'ximea.ros.XimeaClient'
+require 'GenICamClient'
 require 'multiPattern.PatternLocalisation'
 
 --local xml = require 'xml'  -- for exporting the .t7 calibration file to .xml
@@ -94,11 +95,13 @@ function alphanumsort(o)
 end
 
 
-function AutoCalibration:__init(configuration, move_group, ximea_client, sl_studio)
+function AutoCalibration:__init(configuration, move_group, camera_client, sl_studio)
   self.configuration = configuration
   self.config_class = ConfigurationCalibration.new(configuration)
   self.move_group = move_group
-  self.ximea_client = ximea_client
+  self.camera_client = camera_client
+  print("self.camera_client:")
+  print(self.camera_client)
   self.sl_studio = sl_studio
 
   local ok, err = pcall(function() initializeGripperServices(self) end)
@@ -320,8 +323,8 @@ local function captureImage(self, i, camera_configuration, output_directory)
   end
 
   -- capture image
-  self.ximea_client:setExposure(exposure, {camera_serial})
-  local image = self.ximea_client:getImages({camera_serial})
+  self.camera_client:setExposure(exposure, {camera_serial})
+  local image = self.camera_client:getImages({camera_serial})
 
   -- get joint values and pose of image
   local joint_values = self.move_group:getCurrentJointValues()
