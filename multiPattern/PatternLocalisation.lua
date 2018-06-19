@@ -135,7 +135,7 @@ function PatternLocalisation:generateDefaultCircleFinderParams()
   self.circleFinderParams = cv.SimpleBlobDetector_Params {}
 
   self.circleFinderParams.thresholdStep = 5
-  self.circleFinderParams.minThreshold = 60
+  self.circleFinderParams.minThreshold = 10
   self.circleFinderParams.maxThreshold = 230
 
   self.circleFinderParams.minRepeatability = 3
