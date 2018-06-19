@@ -545,6 +545,7 @@ end
 
 local function extractPoints(image_paths, pattern_localizer, pattern_id)
   local found = {}
+  local not_found_indices = {}
   local h,w
   for i,fn in ipairs(image_paths) do
 
@@ -572,10 +573,12 @@ local function extractPoints(image_paths, pattern_localizer, pattern_id)
         print('[OK] (%dx%d)', fn, w, h)
       else
         printf("[Warning] Pattern not found in image file '%s'", fn)
+        printf("Index of not usable image: %d", i)
+        not_found_indices[#not_found_indices+1] = i
       end
     end
   end
-  return found, w, h
+  return found, w, h, not_found_indices
 end
 
 
@@ -624,6 +627,8 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
   local objectPoints = {}
   local imagePointsLeft
   local imagePointsRight
+  local not_found_left
+  local not_found_right
   local width, height
   table.sort(image_paths)
   for _, serial in ipairs(camera_serials) do
@@ -634,10 +639,15 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       end
     end
     printf("Searching calibration target pattern on %d input images for serial %s.", #image_path_single_cam, serial)
-    local imagePoints, w, h = extractPoints(image_path_single_cam, self.pattern_localizer, pattern_id)
+    local imagePoints, w, h, not_found = extractPoints(image_path_single_cam, self.pattern_localizer, pattern_id)
     width = w
     height = h
     printf("Found pattern on %d images.", #imagePoints)
+    if next(not_found) ~= nil then
+      print("Indices of unused images:")
+      print(not_found)
+    end
+    --os.exit()
 
     print(imagePoints)
     local pointImg = torch.ByteTensor(h, w, 1):zero()
@@ -685,6 +695,7 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
         imHeight = height,
         calibrationFlags = calibrationFlags
       }
+      not_found_left = not_found
     else
       local groundTruthPointsRight = generatePatternPoints(self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.pattern_localizer.pattern.pointDist)
       local objectPointsRight = {}
@@ -718,6 +729,7 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
         imHeight = height,
         calibrationFlags = calibrationFlags
       }
+      not_found_right = not_found
     end
   end
 
@@ -725,6 +737,23 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
   print("Running openCV stereo camera calibration...")
   print('calibrationFlags = ')
   print(calibrationFlags)
+
+  if next(not_found_left) ~= nil then
+    for i = 1,#not_found_left do
+      table.remove(imagePointsRight, not_found_left[i])
+    end
+  end
+  if next(not_found_right) ~= nil then
+    for i = 1,#not_found_right do
+      table.remove(imagePointsLeft, not_found_right[i])
+    end
+  end
+
+  print("imagePointsLeft:")
+  print(imagePointsLeft)
+  print("imagePointsRight:")
+  print(imagePointsRight)
+
   --R and T seem to be the pose of the left camera in the right camera coordinate system
   local reprojError, camLeftMatrix, camLeftDistCoeffs, camRightMatrix, camRightDistCoeffs, R, T, E, F =
     cv.stereoCalibrate {
