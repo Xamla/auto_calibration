@@ -44,6 +44,8 @@ end
 
 local slstudio = tryRequire('slstudio')
 
+local offline = true  -- in case we are reading images from files and not really connecting to the driver set offline to true
+
 -- Important: Everything has to be in meters.
 
 local DEFAULT_CIRCLE_PATTERN_GEOMETRY = torch.Tensor({21, 8, 0.005})
@@ -430,17 +432,21 @@ function HandEye:detectPattern()
   --1. capture pair of images
   local left_camera_config = self.configuration.cameras[self.configuration.left_camera_id]
   local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
-  left_img = self:captureImageNoWait(left_camera_config)
-  right_img = self:captureImageNoWait(right_camera_config)
-
-  --[[ only for testing cases
-  local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
-  nr = 4 --#self.configuration.capture_poses
-  left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-  right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-  left_img = cv.imread{left_img_path}
-  right_img = cv.imread{right_img_path}
-  ]]
+  
+  local left_img
+  local right_img
+  if not offline then
+    left_img = self:captureImageNoWait(left_camera_config)
+    right_img = self:captureImageNoWait(right_camera_config)
+  else
+    -- offline (only for testing cases) -> load last captured images
+    local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
+    nr = #self.configuration.capture_poses
+    left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+    right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+    left_img = cv.imread{left_img_path}
+    right_img = cv.imread{right_img_path}
+  end
 
   local ok, cameraPatternTrafo = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
   if not ok then
@@ -511,17 +517,20 @@ function HandEye:movePattern()
   local left_camera_config = self.configuration.cameras[self.configuration.left_camera_id]
   local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
 
-  --[[ only for testing cases
-  local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
-  nr = 2 --#self.configuration.capture_poses
-  left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-  right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-  left_img = cv.imread{left_img_path}
-  right_img = cv.imread{right_img_path}
-  ]]
-
-  left_img = self:captureImageNoWait(left_camera_config)
-  right_img = self:captureImageNoWait(right_camera_config)
+  local left_img
+  local right_img
+  if not offline then
+    left_img = self:captureImageNoWait(left_camera_config)
+    right_img = self:captureImageNoWait(right_camera_config)
+  else
+    -- offline (only for testing cases) -> load last captured images
+    local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
+    nr = #self.configuration.capture_poses
+    left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+    right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+    left_img = cv.imread{left_img_path}
+    right_img = cv.imread{right_img_path}
+  end
   self.debug:publishImg(left_img)
 
   local ok, cameraPatternTrafo = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
@@ -551,12 +560,48 @@ function HandEye:movePattern()
       print(self.predicted_cameraPatternTrafo)
       print('compare with the next pattern detection:')
       pose_tcp = self.H_camera_to_tcp * (relative_transformation * torch.inverse(self.H_camera_to_tcp))
+      
+      local current_pose_tcp = self.move_group:getCurrentPose()
+      print("current_pose_tcp:")
+      print(current_pose_tcp)
+
+      print("pose_tcp:")
+      print(pose_tcp)
+      print("self.tcp_frame_of_reference:")
+      print(self.tcp_frame_of_reference)
+      
+      local pose_tcp_in_base_coord = current_pose_tcp:toTensor() * pose_tcp -- pose_tcp * current_pose_tcp ???
+      print("pose_tcp_in_base_coord:")
+      print(pose_tcp_in_base_coord)
+
       local stampedTransfDesiredTcp = self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
-      --self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
-      --self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
+      print("stampedTransfDesiredTcp:")
+      print(stampedTransfDesiredTcp)
+      --local datatypes_pose_tcp = datatypes.Pose()
+      --datatypes_pose_tcp.stampedTransform = stampedTransfDesiredTcp
+      ----datatypes_pose_tcp:setFrame(self.tcp_frame_of_reference)
+      --print("datatypes_pose_tcp")
+      --print(datatypes_pose_tcp)
+
+      local transf = tf.Transform.new()
+      transf:fromTensor(pose_tcp_in_base_coord)
+      print("transf:")
+      print(transf)   
+      local datatypes_pose_tcp = datatypes.Pose()
+      datatypes_pose_tcp:setTranslation(pose_tcp_in_base_coord[{{1,3},4}])
+      datatypes_pose_tcp:setRotation(transf:getRotation())
+      print("datatypes_pose_tcp:")
+      print(datatypes_pose_tcp)
+      print("datatypes_pose_tcp.stampedTransform:")
+      print(datatypes_pose_tcp.stampedTransform)
+
+      print("current_pose_tcp:")
+      print(current_pose_tcp)
+
       local collision_check = true
+      local end_effector = self.move_group:getEndEffector(self.tcp_end_effector_name)
       print("Moving the robot slightly ...")
-      self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check)
+      end_effector:movePoseLinear(datatypes_pose_tcp, self.configuration.velocity_scaling, collision_check)
       return ok, self.predicted_cameraPatternTrafo
     else
       print('please calibrate the robot first')
@@ -577,12 +622,48 @@ function HandEye:movePattern()
       print(self.predicted_cameraPatternTrafo)
       print('compare with the next pattern detection:')
       pose_tcp = self.H_pattern_to_tcp * (relative_transformation * torch.inverse(self.H_pattern_to_tcp))
+
+      local current_pose_tcp = self.move_group:getCurrentPose()
+      print("current_pose_tcp:")
+      print(current_pose_tcp)
+
+      print("pose_tcp:")
+      print(pose_tcp)
+      print("self.tcp_frame_of_reference:")
+      print(self.tcp_frame_of_reference)
+      
+      local pose_tcp_in_base_coord = current_pose_tcp:toTensor() * pose_tcp -- pose_tcp * current_pose_tcp ???
+      print("pose_tcp_in_base_coord:")
+      print(pose_tcp_in_base_coord)
+
       local stampedTransfDesiredTcp = self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
-      --self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
-      --self.debug:publishTf(pose_tcp, self.tcp_frame_of_reference, self.tcp_frame_of_reference..'_shift')
+      print("stampedTransfDesiredTcp:")
+      print(stampedTransfDesiredTcp)
+      --local datatypes_pose_tcp = datatypes.Pose()
+      --datatypes_pose_tcp.stampedTransform = stampedTransfDesiredTcp
+      ----datatypes_pose_tcp:setFrame(self.tcp_frame_of_reference)
+      --print("datatypes_pose_tcp")
+      --print(datatypes_pose_tcp)
+
+      local transf = tf.Transform.new()
+      transf:fromTensor(pose_tcp_in_base_coord)
+      print("transf:")
+      print(transf)   
+      local datatypes_pose_tcp = datatypes.Pose()
+      datatypes_pose_tcp:setTranslation(pose_tcp_in_base_coord[{{1,3},4}])
+      datatypes_pose_tcp:setRotation(transf:getRotation())
+      print("datatypes_pose_tcp:")
+      print(datatypes_pose_tcp)
+      print("datatypes_pose_tcp.stampedTransform:")
+      print(datatypes_pose_tcp.stampedTransform)
+
+      print("current_pose_tcp:")
+      print(current_pose_tcp)
+
       local collision_check = true
+      local end_effector = self.move_group:getEndEffector(self.tcp_end_effector_name)
       print("Moving the robot slightly ...")
-      self.move_group:moveL(self.tcp_end_effector_name, stampedTransfDesiredTcp, self.configuration.velocity_scaling, collision_check)
+      end_effector:movePoseLinear(datatypes_pose_tcp, self.configuration.velocity_scaling, collision_check)
       return ok, self.predicted_cameraPatternTrafo
     else
       print('please calibrate the robot first')
