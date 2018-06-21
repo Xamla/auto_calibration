@@ -42,24 +42,24 @@ local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalib
 
 --creates a gripper client for the specified key
 local function constructGripper(grippers, key, nh)
-    print(key)
-    if key == 'GenericRosGripperClient' then
-        local robotiq_action_name = '/xamla/robotiq_driver/robotiq2finger85/gripper_command'
-        return grippers[key].new(nh, robotiq_action_name)
-    elseif key == 'WeissTwoFingerModel' then
-        local wsg_namespace = '/xamla/wsg_driver/wsg50'
-        local wsg_action_name = 'gripper_control'
-        return grippers[key].new(nh, wsg_namespace, wsg_action_name)
-        --local name = '/xamla/wsg_driver/wsg50/gripper_control'
-        --return grippers[key].new(nh, wsg_namespace, name)
-    end
+  print(key)
+  local gripper_action_name = nil
+  if string.match(key, 'robotiq') then
+    gripper_action_name = string.format('/xamla/robotiq_driver/%s/gripper_command', key)
+    return grippers['GenericRosGripperClient'].new(nh, gripper_action_name)
+  elseif string.match(key, 'wsg') then
+    local gripper_namespace = string.format('/xamla/wsg_driver/%s', key)
+    gripper_action_name = 'gripper_control'
+    --gripper_action_name = string.format('/xamla/wsg_driver/%s/gripper_control', key)
+    return grippers['WeissTwoFingerModel'].new(nh, gripper_namespace, gripper_action_name)
+  end
 end
 
 
 local function initializeGripperServices(self)
   local node_handle = ros.NodeHandle()
   self.node_handle = node_handle
-  local key = self.configuration.gripper_key -- get the key from the configuration
+  local key = self.configuration.gripper_key -- get the key (gripper action name) from the configuration
   self.gripper = constructGripper(grippers, key, self.node_handle)
   print('AutoCalibration calling home gripper')
   if self.gripper ~= nil then

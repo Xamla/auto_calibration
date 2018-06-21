@@ -27,8 +27,8 @@ require 'ximea.ros.XimeaClient'
 require 'GenICamClient'
 require 'AutoCalibration'
 
-local grippers = require 'xamlamoveit.grippers.env'
-local index_grippers = {} --index each gripper with an int
+--local grippers = require 'xamlamoveit.grippers.env'
+--local index_grippers = {} --index each gripper with an int
 
 
 local GET_CONNECTED_XIMEA_DEVICES_SERVICE_NAME = '/ximea_mono/get_connected_devices'
@@ -90,19 +90,10 @@ end
 
 
 local function selectGripper()
-
-  local generateMenuOptions = function()
-    local menu_options = {}
-    local i = 1
-    for k,v in pairs(grippers) do
-      menu_options[#menu_options + 1] = { tostring(i), string.format("Gripper key: '%s'", k), function() setGripper(k) return false end }
-      i = i + 1
-    end
-    menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
-    return menu_options
-  end
-
-  prompt:showMenu('Gripper Selection', generateMenuOptions)
+  print('Please type in gripper name (see \'Configuration\' view of Rosvita -> choosen gripper actuator -> \'Properties\' -> \'Name\'):')
+  configuration.gripper_key = prompt:readLine()
+  printf("Gripper action name: %s", configuration.gripper_key)
+  prompt:anyKey()
 end
 
 
@@ -685,7 +676,7 @@ local function showMainMenu()
       { '8', 'Actuator menu', showActuatorMenu },
       { '9', 'Dump configuration', dumpConfiguration },
       { 'c', string.format('Camera localtion selection (\'%s\' camera setup)', configuration.camera_location_mode), selectCameraLocation },
-      { 'g', string.format('Gripper selection (%s)',configuration.gripper_key) , selectGripper },
+      { 'g', string.format('Gripper selection (%s)', configuration.gripper_key) , selectGripper },
       { 't', string.format('Camera type selection (%s)',configuration.camera_type) , selectCameraType },
       { 's', 'Save configuration',  saveConfiguration },
       { 'ESC', 'Quit', false },
