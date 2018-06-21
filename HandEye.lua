@@ -684,7 +684,7 @@ function HandEye:evaluateCalibrationComplex()
   -- First get current robot pose and camera<->pattern trafo:
   local current_pose = self.moveGroup:getCurrentPose()
   -- capture left and right image!!!
-  local ok, camera_pattern_trafo = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, ...)
+  local ok, old_camera_pattern_trafo = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
 
   local motion_service = self.move_group.motion_service
   local eval_poses = self.configuration.eval_poses
@@ -694,13 +694,16 @@ function HandEye:evaluateCalibrationComplex()
     tcp_poses[i] = motion_service:queryPose(self.move_group.name, eval_poses[i], self.tcp_frame_of_reference)
 
 
-    self.predicted_cameraPatternTrafo = cameraPatternTrafo * relative_transformation
-    print('prediction for cameraPatternTrafo after motion:')
-    print(self.predicted_cameraPatternTrafo)
-    print('compare with the next pattern detection:')
-    local pose_tcp = self.H_camera_to_tcp * (relative_transformation * torch.inverse(self.H_camera_to_tcp))
+    --local pose_tcp = self.H_camera_to_tcp * (relative_transformation * torch.inverse(self.H_camera_to_tcp))
+    -- here: calculate relative_transform from tcp_pose and self.H_camera_to_tcp!!!
 
+    --local predicted_cameraPatternTrafo = old_cameraPatternTrafo * relative_transformation
+    --print('prediction for cameraPatternTrafo after motion:')
+    --print(predicted_cameraPatternTrafo)
+    --print('compare with pattern detection:')
 
+    -- ... to be continued ...
+    
   end
 end
 
