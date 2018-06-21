@@ -79,6 +79,7 @@ local configuration = {
   gripper_key = '',
   camera_location_mode = 'extern',
   camera_type = 'ximea',
+  eval_poses = {},
 }
 
 
@@ -465,6 +466,39 @@ local function teachCapturePoses()
 end
 
 
+local function teachNewEvalPoses()
+  print('How many? Enter the number of poses to teach:')
+  local count = prompt:readNumber()
+  if count > 0 and count == count then
+    local poses = recordPoseList(count)
+    if poses ~= nil then
+      configuration.eval_poses = poses
+    end
+  else
+    print('Invalid input. Nothing changed')
+  end
+  prompt:anyKey()
+end
+
+
+local function editExistingEvalPoses()
+  editPoseList(configuration.eval_poses)
+end
+
+
+local function teachEvalPoses()
+  local menu_options = {
+    { 't', 'Teach new poses for evaluation', teachNewEvalPoses }
+  }
+  if configuration.eval_poses ~= nil and #configuration.eval_poses > 0 then
+    menu_options[#menu_options + 1] = { 'e', 'Edit existing poses for evaluation', editExistingEvalPoses }
+  end
+  menu_options[#menu_options + 1] = { 'ESC', 'Return to main menu...', false }
+  prompt:showMenu('Teach Evaluation Poses', menu_options)
+
+end
+
+
 local function setVelocityScaling()
   prompt:printTitle('Set Velocity Scaling')
   printf('Current velocity scaling: %f', configuration.velocity_scaling)
@@ -675,9 +709,10 @@ local function showMainMenu()
       { '7', string.format('Set velocity scaling (%f)', configuration.velocity_scaling), setVelocityScaling },
       { '8', 'Actuator menu', showActuatorMenu },
       { '9', 'Dump configuration', dumpConfiguration },
-      { 'c', string.format('Camera localtion selection (\'%s\' camera setup)', configuration.camera_location_mode), selectCameraLocation },
+      { 'c', string.format('Camera location selection (\'%s\' camera setup)', configuration.camera_location_mode), selectCameraLocation },
       { 'g', string.format('Gripper selection (%s)', configuration.gripper_key) , selectGripper },
       { 't', string.format('Camera type selection (%s)',configuration.camera_type) , selectCameraType },
+      { 'e', string.format('Teach poses for evaluation (%d defined)', #configuration.eval_poses), teachEvalPoses },
       { 's', 'Save configuration',  saveConfiguration },
       { 'ESC', 'Quit', false },
     }

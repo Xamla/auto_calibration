@@ -42,7 +42,7 @@ local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalib
 
 --creates a gripper client for the specified key
 local function constructGripper(grippers, key, nh)
-  print(key)
+  printf('Gripper name: %s', key)
   local gripper_action_name = nil
   if string.match(key, 'robotiq') then
     gripper_action_name = string.format('/xamla/robotiq_driver/%s/gripper_command', key)

@@ -323,7 +323,6 @@ local function runFullCycle(wait)
     end
   end
 
-
   if offline then
     runCaptureSequence(false)
     calibrateCamera(false)
@@ -341,61 +340,16 @@ local function runFullCycle(wait)
 end
 
 
---moves the pattern some distance along its x or y-axis
-local function movePattern()
-  prompt:printTitle('Move Pattern')
-  hand_eye:movePattern()
-end
-
-local function detectPattern()
-  prompt:printTitle('Detect Pattern')
-  hand_eye:detectPattern()
-end
-
-local function detectPatternPointCloud()
-  prompt:printTitle('Detect Pattern in Point Cloud')
-  hand_eye:locateCirclePatternInPointCloud()
-end
-
-local function detectPatternStereoPointCloud()
-  prompt:printTitle('Detect Pattern in Stereo Point Cloud')
-  hand_eye:locateCirclePatternInStereoPointCloud()
-end
-
-local function getPointCloud()
-  prompt:printTitle('Get point cloud')
-  hand_eye:getPointCloud()
-end
-
-local function getStereoPointCloud()
-  prompt:printTitle('Get stereo point cloud')
-  hand_eye:getStereoPointCloud()
-end
-
-local function evaluateCalibration()
-  prompt:printTitle('Evaluate calibration')
+local function evaluateCalibrationSimple()
+  prompt:printTitle('Evaluate calibration by only one movement')
   hand_eye:evaluateCalibration()
 end
 
-local function pickingPose()
-  prompt:printTitle('Create picking pose')
-  hand_eye:pickingPose()
+local function evaluateCalibrationComplex()
+  prompt:printTitle('Evaluate calibration by several movements')
+  hand_eye:evaluateCalibrationComplex()
 end
 
-local function moveToMarker()
-  prompt:printTitle('Create picking pose')
-  hand_eye:moveToMarker()
-end
-
-local function moveToMarkerWithPrePickPose()
-  prompt:printTitle('Moving to int marker with pre-pick pose')
-  hand_eye:moveToIntMarkerPoseWithPrePick()
-end
-
-local function moveToInitPoseSupervised()
-  prompt:printTitle('Move to stored pose in supervised mode')
-  hand_eye:moveToInitPoseSupervised()
-end
 
 local function closeGripper()
   prompt:printTitle('Close gripper')
@@ -412,17 +366,8 @@ local function menuEvaluateCalibration()
 
   local menu_options =
   {
-
-    { 'e', 'Evaluate calibration', evaluateCalibration },
-    { 'm', 'Move the pattern 5cm towards the camera', movePattern },
-    { 'd', 'Detect pattern', detectPattern },
-    { 'g', 'Detect pattern in stereo point cloud', detectPatternStereoPointCloud },
-    { 'z', 'Create picking pose', pickingPose },
-    { 'n', 'Move end effector to int marker', moveToMarkerWithPrePickPose },
-    { 'i', 'Move to initial pose supervised', moveToInitPoseSupervised },
-    { 'q', 'Get point cloud', getPointCloud },
-    { 's', 'Get stereo point cloud', getStereoPointCloud },
-
+    { 's', 'Evaluate calibration simple', evaluateCalibrationSimple },
+    { 'c', 'Evaluate calibration complex', evaluateCalibrationComplex },
     { 'ESC', 'Quit', false },
   }
   prompt:showMenu('Evaluate Calibration Menu', menu_options)
@@ -443,8 +388,6 @@ local function showMainMenu()
     { 'e', 'Evaluate calibration menu', menuEvaluateCalibration },
     { 'x', 'Close gripper', closeGripper },
     { 'y', 'Open gripper', openGripper },
-
-
     { 's', 'Save calibration', saveCalibration },
     { '1', 'Show current configuration', showCurrentConfiguration },
     { 't', 'Test alternative calibration paths', altCalibrationPaths },

@@ -620,10 +620,7 @@ function HandEye:movePattern()
 end
 
 
--- Here, only the function "patternLocalizer:calcCamPoseViaPlaneFit" is evaluated,
--- i.e the calculation of the "Camera<->Pattern transformation.
--- Note: The TCP<->Pattern transformation (or TCP<->Camera transformation in case of 'onboard')
---       is not evaluated here.
+-- Evaluation of the hand eye calibration (with only one robot movement)
 function HandEye:evaluateCalibration()
   print('HandEye:evaluateCalibration()')
   local ok, prediction = self:movePattern() -- stores the predicted pose of the pattern at self.predicted_cameraPatternTrafo and returns it
@@ -672,6 +669,39 @@ function HandEye:evaluateCalibration()
   print('rotation error (norm of difference of Euler angles):', err_r)
   err_r3 = torch.abs(err_r2 - M_PI/2)
   print('rotation error metric #2 [in radians]:', err_r3, ' ( = ', err_r3 * 180/M_PI, ' degree)')
+end
+
+
+-- Evaluation of the hand eye calibration (with several robot movements)
+-- Details:
+-- For several, previously taught evaluation poses (i.e. joint configurations)
+-- the corresponding tcp poses are calculated via forward kinematic and 
+-- the new camera<->pattern trafo is predicted for each of these poses.
+-- After that the robot moves are actually performed and the new camera<->pattern trafos
+-- are measured via plane fit and compared with the prediction.
+function HandEye:evaluateCalibrationComplex()
+
+  -- First get current robot pose and camera<->pattern trafo:
+  local current_pose = self.moveGroup:getCurrentPose()
+  -- capture left and right image!!!
+  local ok, camera_pattern_trafo = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, ...)
+
+  local motion_service = self.move_group.motion_service
+  local eval_poses = self.configuration.eval_poses
+  local tcp_poses = {}
+  for i = 1, #eval_poses do
+    assert(torch.isTypeOf(eval_poses[i], datatypes.JointValues))
+    tcp_poses[i] = motion_service:queryPose(self.move_group.name, eval_poses[i], self.tcp_frame_of_reference)
+
+
+    self.predicted_cameraPatternTrafo = cameraPatternTrafo * relative_transformation
+    print('prediction for cameraPatternTrafo after motion:')
+    print(self.predicted_cameraPatternTrafo)
+    print('compare with the next pattern detection:')
+    local pose_tcp = self.H_camera_to_tcp * (relative_transformation * torch.inverse(self.H_camera_to_tcp))
+
+
+  end
 end
 
 
