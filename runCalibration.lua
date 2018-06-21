@@ -32,10 +32,8 @@ local offline = false --true  -- in case we are reading images from files and no
 local prompt
 local configuration
 local motion_service
-local ximea_client
 local auto_calibration
 local hand_eye
-local end_effector
 
 
 local function moveToStartPose(wait)
@@ -194,12 +192,12 @@ end
 local function selectCamera()
 
   ids = {}
-  for cam_index,serial  in pairs(configuration.cameras) do
+  for cam_index, serial in pairs(configuration.cameras) do
     print('camera=', configuration.cameras[cam_index].serial)
     ids[#ids + 1] = configuration.cameras[cam_index].serial
   end
 
-  local choice = prompt:chooseFromList(ids, 'Available Ximea cameras:')
+  local choice = prompt:chooseFromList(ids, 'Available cameras:')
   if choice ~= nil then
     print('selected camera ', choice)
   end
@@ -576,7 +574,7 @@ local function main(nh)
   local xamla_mg = motionLibrary.MoveGroup(motion_service, configuration.move_group_name) -- motion client
 
   auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, camera_client)
-  hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, motion_service, ximea_client, auto_calibration.gripper, xamla_mg)
+  hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, motion_service, camera_client, auto_calibration.gripper, xamla_mg)
   showMainMenu()
 
   -- shutdown system

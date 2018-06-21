@@ -26,6 +26,8 @@ require 'image'
 
 local pcl = require 'pcl'
 
+require 'ximea.ros.XimeaClient'
+require 'GenICamClient'
 require "multiPattern.PatternLocalisation"
 
 local ros = require 'ros'
@@ -90,14 +92,14 @@ local function fprint(...)
 end
 
 
-function HandEye:__init(configuration, calibration_folder_name, move_group, motion_service, ximea_client, gripper, xamla_mg)
+function HandEye:__init(configuration, calibration_folder_name, move_group, motion_service, camera_client, gripper, xamla_mg)
   self.cloud_topics = {'point_cloud', 'filtered_cloud'}
   self.img_topics = {'pattern_detection_left', 'pattern_detection_right'}
   self.debug = debug.new(self.cloud_topics, self.img_topics)
   print('debug class initialised')
   self.configuration = configuration
   self.move_group = move_group
-  self.ximea_client = ximea_client
+  self.camera_client = camera_client
   self.fingertip_frame_id = 'tcp_fingertip_link'
   self.xamla_mg = xamla_mg
   self.motion_service = motion_service
@@ -222,8 +224,11 @@ function HandEye:captureImageNoWait(camera_configuration)
   print("HandEye:captureImageNoWait: camera serial:")
   print(camera_serial)
   -- capture image
-  self.ximea_client:setExposure(exposure, {camera_serial})  -- works only for ximea cameras
-  local image = self.ximea_client:getImages({camera_serial})  -- works only for ximea cameras
+  self.camera_client:setExposure(exposure, {camera_serial})
+  local image = self.camera_client:getImages({camera_serial})
+  if image:nDimension() > 2 then
+    image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
+  end
   if image:nDimension() == 2 then
     image = cv.cvtColor{image, nil, cv.COLOR_GRAY2BGR}
   end
@@ -573,7 +578,8 @@ function HandEye:movePattern()
       local collision_check = false
       local end_effector = self.move_group:getEndEffector(self.tcp_end_effector_name)
       print("Moving the robot slightly ...")
-      end_effector:movePoseLinear(datatypes_pose_tcp, self.configuration.velocity_scaling, collision_check)
+      --end_effector:movePoseLinear(datatypes_pose_tcp, self.configuration.velocity_scaling, collision_check)
+      end_effector:movePoseLinear(datatypes_pose_tcp, 0.8, collision_check, 0.5)
       return ok, self.predicted_cameraPatternTrafo
     else
       print('please calibrate the robot first')
@@ -604,7 +610,8 @@ function HandEye:movePattern()
       local collision_check = false
       local end_effector = self.move_group:getEndEffector(self.tcp_end_effector_name)
       print("Moving the robot slightly ...")
-      end_effector:movePoseLinear(datatypes_pose_tcp, self.configuration.velocity_scaling, collision_check)
+      --end_effector:movePoseLinear(datatypes_pose_tcp, self.configuration.velocity_scaling, collision_check)
+      end_effector:movePoseLinear(datatypes_pose_tcp, 0.8, collision_check, 0.5)
       return ok, self.predicted_cameraPatternTrafo
     else
       print('please calibrate the robot first')
