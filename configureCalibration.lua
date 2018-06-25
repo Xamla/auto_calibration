@@ -115,7 +115,7 @@ local function selectGripper()
       local current = string.sub(gripper_services_str, str_start+1, str_end)
       a,b = string.find(current, 'driver/')
       c,d = string.find(current, '/', b+1)
-      local name = string.sub(current, b+1, c-1)
+      local name = string.sub(current, 1, c-1)
       if not contains(gripper_names, name) then
         table.insert(gripper_names, name)
       end
