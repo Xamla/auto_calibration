@@ -620,6 +620,44 @@ function HandEye:movePattern()
 end
 
 
+-- Compute some metric for the evaluation of the hand-eye calibration
+local function metricCalculation(prediction, detection)
+  local H1 = tf.Transform.new()
+  local H2 = tf.Transform.new()
+  H1:fromTensor(prediction)
+  H2:fromTensor(detection)
+  local R1 = prediction[{{1,3}, {1,3}}]
+  local R2 = detection[{{1,3}, {1,3}}]
+
+  -- translation error (norm of difference)
+  local err_t = torch.norm(prediction[{{1,4}, {4}}] - detection[{{1,4}, {4}}])
+  -- translation error for each axis
+  local err_axes = prediction[{{1,4}, {4}}] - detection[{{1,4}, {4}}]
+  -- rotation error (norm of difference of Euler angles)
+  local err_r = torch.norm(H1:getRotation():toTensor() - H2:getRotation():toTensor())
+
+  -- from http://cmp.felk.cvut.cz/~hodanto2/data/hodan2016evaluation.pdf
+  -- error given  by  the  angle  from  the  axis–angle  representation  of rotation
+  -- the angle of rotation of a matrix R in the axis–angle representation is given by arccos( {Tr(R) -1} /2)
+  -- if R1 ~= R2 => R1 * R2.inv() ~= Identity => angle of rotation ~= 0
+  -- => arccos(angle of rotation) ~= pi/2 = 1.57..
+  local err_r2 = torch.acos( torch.trace(R1* torch.inverse(R2) -1) / 2 )
+  local err_r3 = torch.abs(err_r2 - M_PI/2)
+
+  print('translation error (norm of difference) [in m]:', err_t, ' ( = ', err_t * 1000, ' mm)')
+  print('translation error for each axis [in m]:')
+  print(err_axes)
+  print('euler angles prediction:')
+  print(H1:getRotation():toTensor())
+  print('euler angles detection:')
+  print(H2:getRotation():toTensor())
+  print('rotation error (norm of difference of Euler angles):', err_r)
+  print('rotation error metric #2 [in radians]:', err_r3, ' ( = ', err_r3 * 180/M_PI, ' degree)')
+
+  return err_t, err_axes, err_r, err_r3
+end
+
+
 -- Evaluation of the hand eye calibration (with only one robot movement)
 function HandEye:evaluateCalibration()
   print('HandEye:evaluateCalibration()')
@@ -636,39 +674,8 @@ function HandEye:evaluateCalibration()
   print('detected cameraPatternTrafo after motion:')
   print(detection)
 
-  --compute some metric
-  local H1 = tf.Transform.new()
-  local H2 = tf.Transform.new()
-  H1:fromTensor(prediction)
-  H2:fromTensor(detection)
-  local R1 = prediction[{{1,3}, {1,3}}]
-  local R2 = detection[{{1,3}, {1,3}}]
-
-  -- translation error (norm of difference)
-  local err_t = torch.norm(prediction[{{1,4}, {4}}] - detection[{{1,4}, {4}}])
-  -- translation error for each axis
-  local err_axes = prediction[{{1,4}, {4}}] - detection[{{1,4}, {4}}]
-  -- rotation error (norm of difference of Euler angles)
-  local err_r = torch.norm(H1:getRotation():toTensor() - H2:getRotation():toTensor())
-
-  -- from http://cmp.felk.cvut.cz/~hodanto2/data/hodan2016evaluation.pdf
-  -- error given  by  the  angle  from  the  axis–angle  representation  of rotation (how to interpret it?)
-  -- the angle of rotation of a matrix R in the axis–angle representation is given by arccos( {Tr(R) -1} /2)
-  -- if R1 ~= R2 => R1 * R2.inv() ~= Identity => angle of rotation ~= 0
-  -- => arccos(angle of rotation) ~= pi/2 = 1.57..
-  local err_r2 = torch.acos( torch.trace(R1* torch.inverse(R2) -1) / 2 )
-
-  print('translation error (norm of difference) [in m]:', err_t, ' ( = ', err_t * 1000, ' mm)')
-  print('translation error for each axis [in m]:')
-  print(err_axes)
-
-  print('euler angles prediction:')
-  print(H1:getRotation():toTensor())
-  print('euler angles detection:')
-  print(H2:getRotation():toTensor())
-  print('rotation error (norm of difference of Euler angles):', err_r)
-  err_r3 = torch.abs(err_r2 - M_PI/2)
-  print('rotation error metric #2 [in radians]:', err_r3, ' ( = ', err_r3 * 180/M_PI, ' degree)')
+  -- compute some metric
+  metricCalculation(prediction, detection)
 end
 
 
@@ -681,30 +688,112 @@ end
 -- are measured via plane fit and compared with the prediction.
 function HandEye:evaluateCalibrationComplex()
 
-  -- First get current robot pose and camera<->pattern trafo:
-  local current_pose = self.moveGroup:getCurrentPose()
-  -- capture left and right image!!!
-  local ok, old_camera_pattern_trafo = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
-
-  local motion_service = self.move_group.motion_service
-  local eval_poses = self.configuration.eval_poses
-  local tcp_poses = {}
-  for i = 1, #eval_poses do
-    assert(torch.isTypeOf(eval_poses[i], datatypes.JointValues))
-    tcp_poses[i] = motion_service:queryPose(self.move_group.name, eval_poses[i], self.tcp_frame_of_reference)
-
-
-    --local pose_tcp = self.H_camera_to_tcp * (relative_transformation * torch.inverse(self.H_camera_to_tcp))
-    -- here: calculate relative_transform from tcp_pose and self.H_camera_to_tcp!!!
-
-    --local predicted_cameraPatternTrafo = old_cameraPatternTrafo * relative_transformation
-    --print('prediction for cameraPatternTrafo after motion:')
-    --print(predicted_cameraPatternTrafo)
-    --print('compare with pattern detection:')
-
-    -- ... to be continued ...
-    
+  -- set the folder to 'current'
+  local files_path = self.current_path
+  --if the calibration data is missing, read it from the file
+  if self.configuration.camera_location_mode == 'onboard' then
+    if self.H_camera_to_tcp == nil or self.H_pattern_to_base == nil then
+      self.H_pattern_to_base = torch.load(files_path .. "/PatternBase.t7")
+      self.H_camera_to_tcp = torch.load(files_path .. "/HandEye.t7")
+    end
+  else
+    if self.H_pattern_to_tcp == nil or self.H_cam_to_base == nil then
+      self.H_cam_to_base = torch.load(files_path .. "/LeftCamBase.t7")
+      self.H_pattern_to_tcp = torch.load(files_path .. "/HandPattern.t7")
+    end
   end
+
+  --1. move to the last posture of the taught capture postures
+  local last_pose = self.configuration.capture_poses[#self.configuration.capture_poses]
+  print("Moving to the last pose of the taught capture poses ...")
+  self.move_group:moveJoints(last_pose)
+  local tcp_old = self.move_group:getCurrentPose():toTensor()
+
+  --2. determine the camera<->pattern transformation
+  print("Calculation of the camera<->pattern transformation..")
+  local left_camera_config = self.configuration.cameras[self.configuration.left_camera_id]
+  local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
+  local left_img
+  local right_img
+  if not offline then
+    left_img = self:captureImageNoWait(left_camera_config)
+    right_img = self:captureImageNoWait(right_camera_config)
+  else
+    -- offline (only for testing cases) -> load last captured images
+    local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
+    local nr = #self.configuration.capture_poses
+    local left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+    local right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+    left_img = cv.imread{left_img_path}
+    right_img = cv.imread{right_img_path}
+  end
+  local ok, cameraPatternTrafo_old = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+  if not ok then
+    print('pattern not found!')
+    return ok, cameraPatternTrafo_old
+  end
+  print("old camera<->pattern trafo:")
+  print(cameraPatternTrafo_old)
+
+  local end_effector = self.move_group:getEndEffector(self.tcp_end_effector_name)
+  local eval_poses = self.configuration.eval_poses
+  if next(eval_poses) == nil then
+    print('No evaluation poses taught! Teach evaluation poses first.')
+    return eval_poses
+  end
+  local translation_error = {}
+  local translation_error_axes = {}
+  local rotation_error1 = {}
+  local rotation_error2 = {}
+  local err_t_avg, err_t_axes_avg, err_r1_avg, err_r2_avg = 0, 0, 0, 0
+  local count = 0
+  for i = 1, #eval_poses do
+    print(string.format("Predict the camera<->pattern trafo for evaluation pose %d:", i))
+    assert(torch.isTypeOf(eval_poses[i], datatypes.JointValues), string.format("Evaluation pose %d is not of type \'datatypes.JointValues\'!", i))
+    local tcp_new = end_effector:computePose(eval_poses[i]):toTensor()
+    local prediction
+    if self.configuration.camera_location_mode == 'onboard' then
+      prediction = torch.inverse(self.H_camera_to_tcp) * torch.inverse(tcp_new) * tcp_old * self.H_camera_to_tcp * cameraPatternTrafo_old
+    else
+      prediction = torch.inverse(self.H_pattern_to_tcp) * torch.inverse(tcp_new) * tcp_old * self.H_pattern_to_tcp * cameraPatternTrafo_old
+    end
+    print("Prediction of new camera<->pattern trafo:")
+    print(prediction)
+
+    print('Compare with pattern detection:')
+
+    print(string.format("Moving to evaluation pose %d ...", i))
+    self.move_group:moveJoints(eval_poses[i])
+    tcp_new = self.move_group:getCurrentPose():toTensor()
+
+    left_img = self:captureImageNoWait(left_camera_config)
+    right_img = self:captureImageNoWait(right_camera_config)
+    local ok, detection = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+    if not ok then
+      print('Pattern not found! Taking the next image..')
+    else
+      print("Detected new camera<->pattern trafo:")
+      print(detection)
+      -- compute some metric
+      translation_error[i], translation_error_axes[i], rotation_error1[i], rotation_error2[i] = metricCalculation(prediction, detection)
+      err_t_avg = err_t_avg + translation_error[i]
+      err_t_axes_avg = err_t_axes_avg + translation_error_axes[i]
+      err_r1_avg = err_r1_avg + rotation_error1[i]
+      err_r2_avg = err_r2_avg + rotation_error2[i]
+      count = count + 1
+      tcp_old = tcp_new
+      cameraPatternTrafo_old = detection
+    end     
+  end
+  err_t_avg = err_t_avg / count
+  err_t_axes_avg = err_t_axes_avg / count
+  err_r1_avg = err_r1_avg / count
+  err_r2_avg = err_r2_avg / count
+  print('average translation error (norm of difference) [in m]:', err_t_avg, ' ( = ', err_t_avg * 1000, ' mm)')
+  print('average translation error for each axis [in m]:')
+  print(err_t_axes_avg)
+  print('average rotation error (norm of difference of Euler angles):', err_r1_avg)
+  print('average rotation error metric #2 [in radians]:', err_r2_avg, ' ( = ', err_r2_avg * 180/M_PI, ' degree)')
 end
 
 
