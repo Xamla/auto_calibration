@@ -123,7 +123,7 @@ local function selectGripper()
     end
   end
 
-  gripper_names = {}
+  local gripper_names = {}
   if robotiq ~= nil then
     detect_gripper_names(gripper_names, robotiq)
   end
@@ -135,6 +135,10 @@ local function selectGripper()
   for i = 1, #gripper_names do
     menu_options[i] = { string.format('%d', i), gripper_names[i], function() setGripper(gripper_names[i]) return false end}
   end
+  if #gripper_names == 0 then
+    menu_options[#menu_options + 1] = { 'No gripper available!', '', false }
+  end
+  menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
   prompt:showMenu('Gripper Selction', menu_options)
 end
 
