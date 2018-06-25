@@ -224,7 +224,12 @@ function HandEye:captureImageNoWait(camera_configuration)
   print("HandEye:captureImageNoWait: camera serial:")
   print(camera_serial)
   -- capture image
-  self.camera_client:setExposure(exposure, {camera_serial})
+  if next(self.camera_client) ~= nil then
+    self.camera_client:setExposure(exposure, {camera_serial})
+  else
+    print('No camera connected! -> No image capturing possible!')
+    return nil
+  end
   local image = self.camera_client:getImages({camera_serial})
   if image:nDimension() > 2 then
     image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
@@ -768,6 +773,10 @@ function HandEye:evaluateCalibrationComplex()
 
     left_img = self:captureImageNoWait(left_camera_config)
     right_img = self:captureImageNoWait(right_camera_config)
+    if left_img == nil or right_img == nil then
+      print('Please connect cameras first!')
+      return false
+    end
     local ok, detection = patternLocalizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
     if not ok then
       print('Pattern not found! Taking the next image..')
