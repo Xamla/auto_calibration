@@ -91,10 +91,51 @@ end
 
 
 local function selectGripper()
-  print('Please type in gripper name (see \'Configuration\' view of Rosvita -> choosen gripper actuator -> \'Properties\' -> \'Name\'):')
-  configuration.gripper_key = prompt:readLine()
-  printf("Gripper action name: %s", configuration.gripper_key)
-  prompt:anyKey()
+  local p = io.popen("rosservice list | grep 'robotiq_driver'")
+  local robotiq = p:read("*all")
+  p:close()
+  p = io.popen("rosservice list | grep 'wsg_driver'")
+  local wsg = p:read("*all")
+  p:close()
+
+  local function contains(table, element)
+  for _, value in pairs(table) do
+    if value == element then
+      return true
+    end
+  end
+  return false
+  end
+
+  local function detect_gripper_names(gripper_names, gripper_services_str)
+    local _, count = gripper_services_str:gsub('\n', '\n')
+    str_start = 0
+    for i = 1, count do
+      str_end = string.find(gripper_services_str, '\n', str_start+1)
+      local current = string.sub(gripper_services_str, str_start+1, str_end)
+      a,b = string.find(current, 'driver/')
+      c,d = string.find(current, '/', b+1)
+      local name = string.sub(current, b+1, c-1)
+      if not contains(gripper_names, name) then
+        table.insert(gripper_names, name)
+      end
+      str_start = str_end
+    end
+  end
+
+  gripper_names = {}
+  if robotiq ~= nil then
+    detect_gripper_names(gripper_names, robotiq)
+  end
+  if wsg ~= nil then
+    detect_gripper_names(gripper_names, wsg)
+  end
+ 
+  local menu_options = {}
+  for i = 1, #gripper_names do
+    menu_options[i] = { string.format('%d', i), gripper_names[i], function() setGripper(gripper_names[i]) return false end}
+  end
+  prompt:showMenu('Gripper Selction', menu_options)
 end
 
 

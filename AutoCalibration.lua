@@ -44,13 +44,14 @@ local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalib
 local function constructGripper(grippers, key, nh)
   printf('Gripper name: %s', key)
   local gripper_action_name = nil
-  if string.match(key, 'robotiq') then
-    gripper_action_name = string.format('/xamla/robotiq_driver/%s/gripper_command', key)
+    
+  if string.find(key, 'robotiq') ~= nil then
+    gripper_action_name = string.format('%s/gripper_command', key)
     return grippers['GenericRosGripperClient'].new(nh, gripper_action_name)
-  elseif string.match(key, 'wsg') then
-    local gripper_namespace = string.format('/xamla/wsg_driver/%s', key)
+  elseif string.find(key, 'wsg') ~= nil then
+    local gripper_namespace = key
     gripper_action_name = 'gripper_control'
-    --gripper_action_name = string.format('/xamla/wsg_driver/%s/gripper_control', key)
+    --gripper_action_name = string.format('%s/gripper_control', key)
     return grippers['WeissTwoFingerModel'].new(nh, gripper_namespace, gripper_action_name)
   end
 end
