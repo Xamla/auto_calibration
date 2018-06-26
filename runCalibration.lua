@@ -273,31 +273,18 @@ local function handEye()
   prompt:printTitle('Hand-eye Calibration')
 
   --load the jsposes.t7 file
-
-  if offline then
-    local offline_jsposes_fn = path.join(configuration.output_directory, 'offline', 'jsposes.t7')
-    print('Reading offline_jsposes_fn='..offline_jsposes_fn)
-    if path.exists(offline_jsposes_fn) then
-      jsposes = torch.load(offline_jsposes_fn)
-    else
-      print('Offline poses file does not exist: '..offline_jsposes_fn)
-      return false
-    end
-
+  local jsposes_fn = './calibration/current/jsposes.t7'
+  local jsposes
+  if path.exists(jsposes_fn) then
+    jsposes = torch.load(jsposes_fn)
   else
-    local jsposes_fn = './calibration/current/jsposes.t7'
-    if path.exists(jsposes_fn) then
-      jsposes = torch.load(jsposes_fn)
-    else
-      print('Offline poses file does not exist: '..jsposes_fn)
-      return false
-    end
-
+    print('Joint poses file does not exist: '..jsposes_fn)
+    return false
   end
 
-  left_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.left_camera_id].serial)
-  right_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.right_camera_id].serial)
-  img_data = {}
+  local left_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.left_camera_id].serial)
+  local right_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.right_camera_id].serial)
+  local img_data = {}
   img_data.imgDataLeft = left_cam_data
   img_data.imgDataRight = right_cam_data
   img_data.jsposes = jsposes
