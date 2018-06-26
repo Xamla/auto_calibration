@@ -781,7 +781,6 @@ local function main(nh)
   camera_serials = {}
   camera_serials = queryCameraSerials(nh)
   if next(camera_serials) == nil then
-    configuration.camera_type = 'genicam'
     camera_serials = queryCameraSerials(nh)
   end
   print("camera_type:")
