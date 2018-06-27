@@ -1,15 +1,10 @@
 #!/usr/bin/env th
 --[[
 
-  Configuration script for the
   Xamla Auto Camera Calibration
 
   Copyright 2018 Andreas Koepf, Xamla/PROVISIO GmbH
   All rights reserved.
-
-  This script is part of the Rosvita robot programming system.
-  You may only use it in production when you own a valid
-  Rosvita license.
 
 ]]
 
@@ -45,13 +40,6 @@ local function moveToStartPose(wait)
     prompt:anyKey('press key when ready')
   end
   auto_calibration:moveToStart()
-end
-
-
-local function altCalibrationPaths()
-  prompt:printTitle('Alternative calibration paths')
-  auto_calibration:altCalibrationPaths()
-  prompt:anyKey()
 end
 
 
@@ -106,7 +94,7 @@ local function runCaptureSequence(wait)
   end
 end
 
---http://notebook.kulchenko.com/algorithms/alphanumeric-natural-sorting-for-humans-in-lua
+
 function alphanumsort(o)
    local function conv(s)
       local res, dot = "", ""
@@ -155,7 +143,6 @@ end
 local function selectAndCalibrateMonocularCamera(folder)
 
   --need to generate again the available folders/cameras
-
   local generateMenuOptions = function()
 
     -- generate menu options dynamically
@@ -381,7 +368,6 @@ local function showMainMenu()
     { 'y', 'Open gripper', openGripper },
     { 's', 'Save calibration', saveCalibration },
     { '1', 'Show current configuration', showCurrentConfiguration },
-    { 't', 'Test alternative calibration paths', altCalibrationPaths },
     { 'ESC', 'Quit', false },
   }
   prompt:showMenu('Main Menu', menu_options)

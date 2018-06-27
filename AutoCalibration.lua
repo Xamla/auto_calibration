@@ -42,7 +42,6 @@ local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalib
 
 --creates a gripper client for the specified key
 local function constructGripper(grippers, key, nh)
-  --printf('Gripper name: %s', key)
   local gripper_action_name = nil
     
   if string.find(key, 'robotiq') ~= nil then
@@ -71,7 +70,6 @@ local function initializeGripperServices(self)
 end
 
 
---http://notebook.kulchenko.com/algorithms/alphanumeric-natural-sorting-for-humans-in-lua
 function alphanumsort(o)
   local function conv(s)
      local res, dot = "", ""
@@ -120,7 +118,7 @@ function AutoCalibration:__init(configuration, move_group, camera_client, sl_stu
   print('Output directory for calibration data: '.. self.output_directory)
 
   -- if we are simulating a capture, we will load an old jsposes file
-  --self.offline_jsposes_fn = path.join(configuration.output_directory, 'offline', 'jsposes.t7')
+  self.offline_jsposes_fn = path.join(configuration.output_directory, 'offline', 'jsposes.t7')
 end
 
 
@@ -176,8 +174,6 @@ local function moveJ(self, pos)
   --check that we arrived where we expected
   local curPose = self.move_group:getCurrentPose():toTensor()
   local curJoints = self.move_group:getCurrentJointValues()
-  --use move_group.motion_service.queryPose to do forward kinematics on the current joint state
-  --compare with the stored list: imgDataLeft.jointPoses[i].wrist_3_link
 end
 
 
@@ -327,8 +323,6 @@ local function captureImage(self, i, camera_configuration, output_directory)
   -- get joint values and pose of image
   local joint_values = self.move_group:getCurrentJointValues()
   local pose = self.move_group:getCurrentPose()
-  --print('in captureImage pose = ')
-  --print(pose)
 
   -- create output filename
   --output_directory = self.config_class:getCameraDataOutputPath(camera_serial)
@@ -645,7 +639,6 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       print("Indices of unused images:")
       print(not_found)
     end
-    --os.exit()
 
     print(imagePoints)
     local pointImg = torch.ByteTensor(h, w, 1):zero()
@@ -654,9 +647,6 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
         pointImg[math.floor(imagePoints[i][j][1][2]+0.5)][math.floor(imagePoints[i][j][1][1]+0.5)]=255
       end
     end
-
-    --cv.imshow {"Located point centers", pointImg}
-    --cv.waitKey {-1}
 
     -- generate object points and mono calibrate both cameras
     if serial == left_camera.serial then
@@ -752,7 +742,7 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
   print("imagePointsRight:")
   print(imagePointsRight)
 
-  --R and T seem to be the pose of the left camera in the right camera coordinate system
+  -- R and T are the pose of the left camera in the right camera coordinate system
   local reprojError, camLeftMatrix, camLeftDistCoeffs, camRightMatrix, camRightDistCoeffs, R, T, E, F =
     cv.stereoCalibrate {
       objectPoints=objectPoints,
@@ -763,7 +753,7 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       cameraMatrix2 = self.rightCameraCalibration.camMatrix,
       distCoeffs2 = self.rightCameraCalibration.distCoeffs,
       imageSize = {width, height},
-      calibrationFlags = CalibrationFlags.DefaultStereo --force to set CV_CALIB_FIX_INTRINSIC
+      calibrationFlags = CalibrationFlags.DefaultStereo -- force to set CV_CALIB_FIX_INTRINSIC
     }
   print('R = ')
   print(R)
@@ -858,9 +848,6 @@ function AutoCalibration:monoCalibration(calibrationFlags, folder, serial)
     end
   end
 
-  --cv.imshow{"Located point centers", pointImg}
-  --cv.waitKey{-1}
-
   -- generate object points
   local groundTruthPoints = generatePatternPoints(self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.pattern_localizer.pattern.pointDist)
   local objectPoints = {}
@@ -907,31 +894,6 @@ function AutoCalibration:monoCalibration(calibrationFlags, folder, serial)
   }
 
   return true
-end
-
-
-
---  Tests with the debug tool for an alternative folder structure to save the calibration data
---  Base path:
---  calibration/<date>_<time>/<left|right>_<serial #>
---                                                     /calibration.yaml: could store all paths here
---                                                     /calibration.t7
---                                                     /capture/cam_<serial#>_001.png
-function AutoCalibration:altCalibrationPaths()
-  local configuration = self.configuration
-  local config_class = ConfigurationCalibration.new(configuration)
-  config_class:createOutputDirectories()
-  config_class:debugOutputDirs()
-  local serial = config_class:getSerialFromId('left')
-  print(config_class:getCameraDataOutputPath(serial))
-  print(config_class:getCameraCalibrationFileOutputPath(serial))
-
-  --create the generic file names structure
-  local generic_file_names = {}
-  for key_camera_id, value in pairs(self.configuration.cameras) do
-      generic_file_names[key_camera_id] = {}
-  end
-  print(generic_file_names)
 end
 
 

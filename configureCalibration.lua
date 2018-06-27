@@ -2,16 +2,16 @@
 
 --[[
 
+  Configuration script for the
   Xamla Auto Camera Calibration
 
   Copyright 2018 Andreas Koepf, Xamla/PROVISIO GmbH
   All rights reserved.
 
-]]
+  This script is part of the Rosvita robot programming system.
+  You may only use it in production when you own a valid
+  Rosvita license.
 
---[[
-Shell command to increase USB buffers (e.g. required for Ximea cams to work):
-> sudo tee /sys/module/usbcore/parameters/usbfs_memory_mb >/dev/null <<<0
 ]]
 
 package.path = package.path .. ";../../lua/auto_calibration/?.lua"
@@ -29,9 +29,6 @@ require 'ximea.ros.XimeaClient'
 require 'GenICamClient'
 require 'AutoCalibration'
 
---local grippers = require 'xamlamoveit.grippers.env'
---local index_grippers = {} --index each gripper with an int
-
 
 local GET_CONNECTED_XIMEA_DEVICES_SERVICE_NAME = '/ximea_mono/get_connected_devices'
 local GET_CONNECTED_GENICAM_DEVICES_SERVICE_NAME = 'camera_aravis_node/getconnecteddevices'
@@ -41,10 +38,10 @@ local DEFAULT_SLEEP_BEFORE_CAPTURE = 1.0
 local RIGHT_CAMERA_ID = 'right'
 
 
-local motion_service -- motion service
-local move_group -- move group
+local motion_service
+local move_group
 local auto_calibration
-local camera_client -- camera client
+local camera_client
 local prompt
 local move_group_names, move_group_details
 local camera_serials
@@ -141,7 +138,7 @@ local function selectGripper()
     menu_options[#menu_options + 1] = { 'No gripper available!', '', false }
   end
   menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
-  prompt:showMenu('Gripper Selction', menu_options)
+  prompt:showMenu('Gripper Selection', menu_options)
 end
 
 

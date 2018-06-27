@@ -1,9 +1,8 @@
 --[[
-  Hand-Pattern or Hand-Eye calibration, depending on if we have an extern
-  or an onboard camera setup.
+  Hand-Pattern or Hand-Eye calibration, depending on if we have an extern or an onboard camera setup.
+  Tested with UR5 and SDA10D.
   Current limitations:
-  * Only working with stereo camera setup
-  * Only tested with UR5 and SDA10D (especially if we have more than one move group, the current implementation will probably only work with an SDA)
+  * Currently only working with stereo camera setup -> will be extended to single camera setup soon..
 ]]
 package.path = package.path .. ";../../lua/auto_calibration/?.lua"
 package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
@@ -38,7 +37,6 @@ local function tryRequire(module_name)
     return nil
   end
 end
-
 local slstudio = tryRequire('slstudio')
 
 local offline = false -- in case we are reading images from files and not really connecting to the driver set offline to true
@@ -111,9 +109,6 @@ end
 
 function HandEye:getEndEffectorName()
   local move_group_names, move_group_details = self.move_group.motion_service:queryAvailableMoveGroups()
-  --print('HandEye:getEndEffectorName() move_group_names')
-  --print(move_group_names)
-  
   -- find out the index of the selected move_group
   local index = 1
   for i = 1, #move_group_names do
@@ -122,7 +117,6 @@ function HandEye:getEndEffectorName()
       printf("Move group: %s (with index: %d)", self.configuration.move_group_name, index)
     end
   end
-  --local index = 1
   local tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
   local tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
   return tcp_frame_of_reference,tcp_end_effector_name
@@ -132,9 +126,6 @@ end
 function HandEye:getEndEffectors(move_groups)
   local move_group_names, move_group_details = move_groups.motion_service:queryAvailableMoveGroups()
   local rc = {}
-  --print('HandEye:getEndEffectors(): move_group_names')
-  --print(move_group_names)
-
   if #move_group_names == 1 then -- only one move group (e.g. UR)
     rc.tcp_frame_of_reference = move_group_details[move_group_names[1]].end_effector_link_names[1]
     rc.tcp_end_effector_name = move_group_details[move_group_names[1]].end_effector_names[1]
@@ -169,7 +160,7 @@ local function createPatternLocalizer(self)
   pattern_localizer.circleFinderParams.minArea = 300
   pattern_localizer.circleFinderParams.maxArea = 4000
   pattern_localizer:setPatternIDdictionary(torch.load("/home/xamla/Rosvita.Control/lua/auto_calibration/patternIDdictionary.t7"))
-  pattern_localizer:setDBScanParams(100, 10) -- (130, 10)
+  pattern_localizer:setDBScanParams(100, 10)
   pattern_localizer.debugParams = { circleSearch = false, clustering = false, pose = false }
   pattern_localizer:setPatternData(pattern_geometry[2], pattern_geometry[1], pattern_geometry[3])
   pattern_localizer:setStereoCalibration(self.stereoCalibration)
@@ -233,9 +224,6 @@ function HandEye:calibrate(imgData)
     local robotPose = imgData.jsposes.recorded_poses[i]
 
     local ok, patternPoseRelToCamera = self.pattern_localizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left')
-    -- alternatively, use the monocular approach
-    --local patternPoseRelToCamera, points3d = self.pattern_localizer:calcCamPose(imgLeft, leftCameraMatrix, self.pattern_localizer.pattern)
-
     if ok then
       local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
       local cameraPatternTrafo = cameraPoseRelToPattern
@@ -288,7 +276,7 @@ function HandEye:calibrate(imgData)
   end
   bestHESolution = bestHESolution or H
 
-  -- save result
+  -- save result and create links at the 'current' folder
   if self.configuration.camera_location_mode == 'onboard' then
     file_output_path = path.join(output_path, 'HandEye.t7')
     torch.save(file_output_path, bestHESolution)
@@ -330,8 +318,6 @@ function HandEye:calibrate(imgData)
   os.execute('rm -f ' .. current_output_path)
   os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
 
-  -- create links at the 'current' folder
-
   -- calculate camera/pattern pose in base coordinates
   if self.configuration.camera_location_mode == 'onboard' then
     local patternBaseTrafo = Hg[1] * bestHESolution * Hc[1]
@@ -361,7 +347,7 @@ function HandEye:calibrate(imgData)
 end
 
 
--- captures a pair of stereo images and
+-- captures a pair of stereo images and 
 -- detects the camera<->pattern transformation
 function HandEye:detectPattern()
   --1. capture pair of images
@@ -552,8 +538,8 @@ local function metricCalculation(prediction, detection)
   local err_r3 = torch.abs(err_r2 - M_PI/2)
 
   print('translation error (norm of difference) [in m]:', err_t, ' ( = ', err_t * 1000, ' mm)')
-  print('translation error for each axis [in m]:')
-  print(err_axes)
+  print('translation error for each axis [in mm]:')
+  print(err_axes * 1000)
   print('euler angles prediction:')
   print(H1:getRotation():toTensor())
   print('euler angles detection:')
