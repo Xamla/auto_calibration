@@ -1,26 +1,31 @@
-... explanation will be added soon ...
+### Calibration Pipeline:
 
-### Run the calibration with already captured images (from an extern stereo camera system)
-
-* In Rosvita load a project with UR5 or SDA10D (and gripper), compile it and start ROS.
-* Compress and package current local auto_calibration folder: ``tar cvfz auto_calibration.tgz auto_calibration``
-* Upload ``auto_calibration.tgz`` to Rosvita
-* Remove old auto_calibration folder from Rosvita
-* Unpack uploaded auto_calibration folder: ``tar -xzvf auto_calibration.tgz`` (in Rosvita)
-* Rename **results_german_\<date\>** into **calibration** (in Rosvita)
-  * For **UR5** take **results_german_22_3_2018** <br />
-    (Or **results_german_22_5_2018** (pattern fixed between gripper jaws of the robotiq gripper connected to the ur5 and presented to the cameras at the sda torso); yields no good results -> perhaps the torso with the cameras moved?)
-  * For **SDA10D** take **results_german_23_5_2018** (pattern fixed with tape onto the wsg gripper connected to the sda) 
-* Run the calibration: ``th runCalibration.lua -cfg <stereo_config>.t7``.
-  * For UR5: ``th runCalibration.lua -cfg calibration/configurationStereo.t7`` <br /> 
-    (Or ``th runCalibration.lua -cfg configurationUR5.t7``, if you take **results_german_22_5_2018** with the extern "CAMAU" cameras.)
-  * For SDA10D: ``th runCalibration.lua -cfg configurationYaskawa.t7``
-* Then press:
+* In Rosvita load or create a project (e.g. with UR5 or SDA10D, cameras and gripper), compile it and start ROS.
+* With the Rosvita terminal go into your project folder and start the configuration script:
+  ```
+  cd /home/xamla/Rosvita.Control/projects/<your_project_folder>
+  th ../../lua/auto_calibration/configureCalibration.lua
+  ```
+  **Note**: To permanently save a configuration, it is important to run the configuration script from your projects folder!
+* -> The configuration **main menu** will appear in the terminal. 
+  * Now you can select the robot move group for calibration, the circle pattern id, the gripper, the camera type, etc. ...  
+  * Moreover, you can teach base poses, capture poses and evaluation poses for the calibration. 
+  * **Hint**: Base Poses are mainly used for picking a calibration target. If you don't want to pick a calibration target, only teach a start pose and successively press return afterwards for the remaining base poses. 
+  * Don't forget to **save** the configuration by **pressing the 's' button**.
+* Next run the calibration script from your project folder and with the previously saved configuration: 
+  ```
+  th ../../lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
+  ```
+  **Note**: To permanently save calibration results, it is important to run the calibration script from your projects folder!
+* -> The calibration **main menu** will appear in the terminal. 
+  Now, simply pres e.g.:
+  * c (Capture calibration images)
   * a (Calibrate camera)
-  * s (Save calibration)!!!
+  * s (Save calibration)
   * b (Hand-eye calibration)
-  * e (Evaluate calibration) Is not possible without robot movement!!!
-  
+  * e (Evaluate calibration)
+* **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
+* **Note**: At the moment, hande-eye is only possible for a stereo camera setup.
 
 ### Some notes about the result folder structure:
 * Captured images will be stored in ``./calibration/capture/``
@@ -28,16 +33,3 @@
 * Stereo calibration will be stored in ``./calibration/<date>_<time>/stereo_cams_<serial1>_<serial2>.t7`` (e.g. ``./calibration/2018-06-11_102302/stereo_cams_28670151_35371951.t7``)
 * For an extern stereo setup, hand-pattern calibration will be stored in ``./calibration/<date>_<time>/HandPattern.t7``, and moreover the pose of the left camera relative to the robot base will be stored in ``./calibration/<date>_<time>/LeftCamBase.t7``.
 * For an on-board stereo setup, ... to be continued ...
-
-
-### Some notes about the pattern detector (in ``multiPattern/PatternLocalisation.lua``) 
-* The first detected pattern point (i.e. the **pattern origin**) always is the **top right** pattern point.
-  * To see this, run e.g. **th [camPoseCalcForComparison.lua](https://github.com/Xamla/prototyping_altrogge/blob/master/pipette_tip_detection/camPoseCalcForComparison.lua)**, then open the image **[leftrack1_003.png](https://github.com/Xamla/prototyping_altrogge/blob/master/pipette_tip_detection/leftrack1_003.png)** with gimp and compare the first pixel point of e.g. **"point_list_left\[1\]"** (see terminal output) with the pixel coordinates of the top right pattern point of the corresponding pattern in the image.
-* The **z-axis** of the calculated camera pose relative to the pattern, always **points in the direction away from the camera**.
-  This is valid for all methods, i.e. for the camera pose calculation via "solvePnP", as well as for the camera pose calculation via plane fit.
-  * The reason for this is that:
-    * The pattern origin is the top right pattern point (see above),
-    * The x-axis points from the top right pattern point to the bottom right pattern point (see my camera pose calculation via plane fit in [handPatternCalibration_withTriangulatePointsAndPlanefit.lua](https://github.com/Xamla/prototyping_altrogge/blob/master/calibration/handPatternCalibration_withTriangulatePointsAndPlanefit.lua), lines 415-421 or [rotation_around_pattern_origin.lua](https://github.com/Xamla/prototyping_altrogge/blob/master/calibration/rotation_around_pattern_origin.lua), lines 614-618),
-    * The y-axis points from the top right pattern point to the top left pattern point (see my camera pose calculation via plane fit),
-    * The z-axis points into the direction of the cross product of the x- and y-axis (see my camera pose calculation via plane fit),
-    * All camera pose calculations (via solvePnP or plane fit) give the same result (run e.g. **python3 [test_CamPoseCalculationViaPlaneFit.py](https://github.com/Xamla/prototyping_altrogge/blob/master/pipette_tip_detection/test_CamPoseCalculationViaPlaneFit.py)** and **th [camPoseCalcForComparison.lua](https://github.com/Xamla/prototyping_altrogge/blob/master/pipette_tip_detection/camPoseCalcForComparison.lua)** and compare **"camPoseList_left['3']"**, **"camPoseList_left_viaPlaneFit['3']"** and **"point_list_left[1].pose"**).
