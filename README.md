@@ -31,7 +31,9 @@
 
 ### Some notes about the result folder structure:
 * Captured images will be stored in ``./calibration/capture/``
-* Robot poses will be stored in ``./calibration/offline/jsposes.t7``
-* Stereo calibration will be stored in ``./calibration/<date>_<time>/stereo_cams_<serial1>_<serial2>.t7`` (e.g. ``./calibration/2018-06-11_102302/stereo_cams_28670151_35371951.t7``)
-* For an extern stereo setup, hand-pattern calibration will be stored in ``./calibration/<date>_<time>/HandPattern.t7``, and moreover the pose of the left camera relative to the robot base will be stored in ``./calibration/<date>_<time>/LeftCamBase.t7``.
-* For an on-board stereo setup, ... to be continued ...
+* Robot poses will be stored in ``./calibration/<date>_<time>/jsposes.t7``
+* Stereo calibration will be stored in ``./calibration/<date>_<time>/stereo_cams_<serial1>_<serial2>.t7``
+* For a single camera setup, camera calibration will be stored in ``./calibration/<date>_<time>/cam_<serial>.t7``
+* For an extern stereo setup, hand-pattern calibration will be stored in ``./calibration/<date>_<time>/HandPattern.t7``, and moreover the pose of the left camera relative to the robot base will be stored in ``./calibration/<date>_<time>/LeftCamBase.t7``
+* For an on-board stereo setup, hand-eye (with 'eye' = left cam) calibration will be stored in ``./calibration/<date>_<time>/HandEye.t7``, and moreover the pose of the pattern relative to the robot base will be stored in ``./calibration/<date>_<time>/PatternBase.t7``
+* Links to robot poses and calibration results will be created in ``./calibration/current/``
