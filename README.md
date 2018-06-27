@@ -18,16 +18,16 @@
   ```
   **Note**: To permanently save calibration results, it is important to run the calibration script from your projects folder!
 * -> The **calibration main menu** will appear in the terminal.
-* Now, simply press:
-  * f (Full calibraton cycle)  
-* or press the following sequence:
-  * c (Capture calibration images)
-  * a (Calibrate camera)
-  * s (Save calibration)
-  * b (Hand-eye calibration)
-  * e (Evaluate calibration)
-* **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
-* **Note**: At the moment, hande-eye calibration only works with stereo camera setups.
+  * Now, simply press:
+    * f (Full calibraton cycle)  
+  * or press the following sequence:
+    * c (Capture calibration images)
+    * a (Calibrate camera)
+    * s (Save calibration)
+    * b (Hand-eye calibration)
+    * e (Evaluate calibration)
+  * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
+  * **Note**: At the moment, hande-eye calibration only works with stereo camera setups.
 
 ### Some notes about the result folder structure:
 * Captured images will be stored in ``./calibration/capture/``
