@@ -1,5 +1,7 @@
+package.path = package.path .. ";../../lua/auto_calibration/?.lua"
+package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
 local ros = require 'ros'
---local tf = ros.tf
+local tf = ros.tf
 local actionlib = ros.actionlib
 local SimpleClientGoalState = actionlib.SimpleClientGoalState
 local xutils = require 'xamlamoveit.xutils'
@@ -7,7 +9,7 @@ local autoCalibration = require 'autoCalibration_env'
 local CalibrationMode = autoCalibration.CalibrationMode
 local CalibrationFlags = autoCalibration.CalibrationFlags
 local xamlamoveit = require 'xamlamoveit'
---local datatypes = xamlamoveit.datatypes
+local datatypes = xamlamoveit.datatypes
 
 local cv = require 'cv'
 require 'cv.imgproc'
@@ -18,8 +20,6 @@ require 'cv.calib3d'
 require 'ximea.ros.XimeaClient'
 require 'GenICamClient'
 require 'multiPattern.PatternLocalisation'
-
---local xml = require 'xml'  -- for exporting the .t7 calibration file to .xml
 
 local grippers = require 'xamlamoveit.grippers.env'
 
@@ -42,7 +42,7 @@ local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalib
 
 --creates a gripper client for the specified key
 local function constructGripper(grippers, key, nh)
-  printf('Gripper name: %s', key)
+  --printf('Gripper name: %s', key)
   local gripper_action_name = nil
     
   if string.find(key, 'robotiq') ~= nil then
@@ -62,12 +62,12 @@ local function initializeGripperServices(self)
   self.node_handle = node_handle
   local key = self.configuration.gripper_key -- get the key (gripper action name) from the configuration
   self.gripper = constructGripper(grippers, key, self.node_handle)
-  print('AutoCalibration calling home gripper')
   if self.gripper ~= nil then
+    print('Gripper:')
+    print(self.gripper)
+    print('AutoCalibration calling home gripper')
     self.gripper:home()
   end
-  print('gripper:')
-  print(self.gripper)
 end
 
 
@@ -101,8 +101,6 @@ function AutoCalibration:__init(configuration, move_group, camera_client, sl_stu
   self.config_class = ConfigurationCalibration.new(configuration)
   self.move_group = move_group
   self.camera_client = camera_client
-  print("self.camera_client:")
-  print(self.camera_client)
   self.sl_studio = sl_studio
 
   local ok, err = pcall(function() initializeGripperServices(self) end)
@@ -118,12 +116,11 @@ function AutoCalibration:__init(configuration, move_group, camera_client, sl_stu
 
   -- create an output directory path so that jsposes.t7 and the calibration file are stored in the same directory
   self.calibration_folder_name = os.date(configuration.calibration_directory_template)
-  print('self.calibration_folder_name= '..self.calibration_folder_name)
   self.output_directory = path.join(configuration.output_directory, self.calibration_folder_name)
-  print('self.output_directory= '..self.output_directory)
+  print('Output directory for calibration data: '.. self.output_directory)
 
   -- if we are simulating a capture, we will load an old jsposes file
-  self.offline_jsposes_fn = path.join(configuration.output_directory, 'offline', 'jsposes.t7')
+  --self.offline_jsposes_fn = path.join(configuration.output_directory, 'offline', 'jsposes.t7')
 end
 
 
@@ -165,7 +162,7 @@ local function createPatternLocalizer(self)
   local pattern_localizer = PatternLocalisation()
   pattern_localizer.circleFinderParams.minArea = 300
   pattern_localizer.circleFinderParams.maxArea = 4000
-  pattern_localizer:setPatternIDdictionary(torch.load("patternIDdictionary.t7"))
+  pattern_localizer:setPatternIDdictionary(torch.load("/home/xamla/Rosvita.Control/lua/auto_calibration/patternIDdictionary.t7"))
   pattern_localizer:setDBScanParams(100, 10)
   pattern_localizer.debugParams = { circleSearch = false, clustering = false, pose = false }
   pattern_localizer:setPatternData(pattern_geometry[2], pattern_geometry[1], pattern_geometry[3])
@@ -398,7 +395,7 @@ function AutoCalibration:runCaptureSequence()
   local output_directory = path.join(configuration.output_directory, 'capture')
 
   print('Deleting output directory')
-  os.execute('rm -r '.. output_directory)
+  os.execute('rm -rf '.. output_directory)
 
   print('Creating output directory')
   os.execute('mkdir -p ' .. output_directory)
@@ -957,13 +954,13 @@ function AutoCalibration:savePoses()
     local poses_fn = 'jsposes.t7'
     os.execute('mkdir -p ' .. self.output_directory)
     local poses_file_path = path.join(self.output_directory, poses_fn)
-    os.execute('rm ' .. poses_file_path)
+    os.execute('rm -f ' .. poses_file_path)
     print('Saving poses file to: ' .. poses_file_path)
     torch.save(poses_file_path, jsposes)
 
     -- also linking pose file in current directory
     local current_output_path = path.join(current_output_directory, poses_fn)
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     local link_target = path.join('..', self.calibration_folder_name, poses_fn)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     printf("Created link in '%s' -> '%s'", current_output_path, link_target)
@@ -996,7 +993,7 @@ function AutoCalibration:saveCalibration()
 
     -- also linking calibration in current directory
     local current_output_path = path.join(current_output_directory, calibration_fn)
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     local link_target = path.join('..', calibration_name, calibration_fn)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     printf("Created link in '%s' -> '%s'", current_output_path, link_target)
@@ -1016,7 +1013,7 @@ function AutoCalibration:saveCalibration()
     print('Structured light calibration saved to: ' .. calibration_file_path)
 
     local current_output_path = path.join(current_output_directory, calibration_fn)
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     local link_target = path.join('..', calibration_name, calibration_fn)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     printf("Created link in '%s' -> '%s'", current_output_path, link_target)
@@ -1042,7 +1039,7 @@ function AutoCalibration:saveCalibration()
 
     -- also linking stereo calibration in current directory
     local current_output_path = path.join(current_output_directory, calibration_fn)
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     local link_target = path.join('..', calibration_name, calibration_fn)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     printf("Created link in '%s' -> '%s'", current_output_path, link_target)

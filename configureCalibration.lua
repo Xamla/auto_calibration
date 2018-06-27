@@ -14,6 +14,8 @@ Shell command to increase USB buffers (e.g. required for Ximea cams to work):
 > sudo tee /sys/module/usbcore/parameters/usbfs_memory_mb >/dev/null <<<0
 ]]
 
+package.path = package.path .. ";../../lua/auto_calibration/?.lua"
+package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
 local ros = require 'ros'
 local datatypes = require 'xamlamoveit.datatypes'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
@@ -783,10 +785,6 @@ local function main(nh)
   if next(camera_serials) == nil then
     camera_serials = queryCameraSerials(nh)
   end
-  print("camera_type:")
-  print(configuration.camera_type)
-  print("camera_serials:")
-  print(camera_serials)
   if #camera_serials > 0 and #table.keys(configuration.cameras) == 0 then
     -- create default configuration left
     configuration.cameras[DEFAULT_CAMERA_ID] = createCameraConfiguration(DEFAULT_CAMERA_ID, camera_serials[1])
@@ -797,7 +795,6 @@ local function main(nh)
       configuration.right_camera_id = RIGHT_CAMERA_ID
     end
   end
-
   if #camera_serials > 0 then
     if configuration.camera_type == 'ximea' then
       camera_client = XimeaClient(nh, 'ximea_mono', false, false)
@@ -810,6 +807,20 @@ local function main(nh)
 
   prompt:showList(move_group_names, 'Available MoveGroups:')
   prompt:showList(camera_serials, 'Available Cameras:')
+
+  local p = io.popen("pwd")
+  local start_path = p:read("*l")
+  p:close()
+  if not string.match(start_path, "projects") then
+    print('\n')
+    print('===================================================================================')
+    print('= WARNING:                                                                        =')
+    print('= Configuration data (capture poses ...) will get lost after stopping Rosvita!    =')
+    print('= To permanently save configuration data, start script from your project folder:  =')
+    print('= cd /home/xamla/Rosvita.Control/projects/<your_project_folder>                   =')
+    print('= th ../../lua/auto_calibration/configureCalibration.lua                          =')
+    print('===================================================================================')
+  end
 
   showMainMenu()
 

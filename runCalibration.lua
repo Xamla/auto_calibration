@@ -12,6 +12,9 @@
   Rosvita license.
 
 ]]
+
+package.path = package.path .. ";../../lua/auto_calibration/?.lua"
+package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
 local ros = require 'ros'
 local datatypes = require 'xamlamoveit.datatypes'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
@@ -85,9 +88,10 @@ local function runCaptureSequence(wait)
   end
 
   printf('Running capture sequence with %d poses...', #pos_list)
+  print('Folder \'./calibration/capture\' and \'jsposes.t7\' will be deleted. Did you backup your old capture data?')
   local go = true
   if wait ~= false then
-    print('enter to continue, ESC to cancel')
+    print('Press \'Enter\' to continue, \'ESC\' to cancel')
     go = prompt:waitEnterOrEsc()
   end
 
@@ -505,6 +509,21 @@ local function main(nh)
 
   auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, camera_client)
   hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, motion_service, camera_client, auto_calibration.gripper, xamla_mg)
+  
+  local p = io.popen("pwd")
+  local start_path = p:read("*l")
+  p:close()
+  if not string.match(start_path, "projects") then
+    print('\n')
+    print('===================================================================================')
+    print('= WARNING:                                                                        =')
+    print('= Calibration results will get lost after stopping Rosvita!                       =')
+    print('= To permanently save calibration results, start script from your project folder: =')
+    print('= cd /home/xamla/Rosvita.Control/projects/<your_project_folder>                   =')
+    print('= th ../../lua/auto_calibration/runCalibration.lua -cfg <your_config_file>        =')
+    print('===================================================================================')
+  end
+  
   showMainMenu()
 
   -- shutdown system

@@ -5,6 +5,8 @@
   * Only working with stereo camera setup
   * Only tested with UR5 and SDA10D (especially if we have more than one move group, the current implementation will probably only work with an SDA)
 ]]
+package.path = package.path .. ";../../lua/auto_calibration/?.lua"
+package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
 local xamla3d = require 'xamla3d'
 local calib = require 'handEyeCalibration'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
@@ -51,8 +53,8 @@ local handEye = {}
 local HandEye = torch.class('autoCalibration.HandEye', handEye)
 
 
-local function fprint(...)
-    print(string.format(...))
+local function printf(...)
+  print(string.format(...))
 end
 
 
@@ -109,15 +111,15 @@ end
 
 function HandEye:getEndEffectorName()
   local move_group_names, move_group_details = self.move_group.motion_service:queryAvailableMoveGroups()
-  print('HandEye:getEndEffectorName() move_group_names')
-  print(move_group_names)
+  --print('HandEye:getEndEffectorName() move_group_names')
+  --print(move_group_names)
   
   -- find out the index of the selected move_group
   local index = 1
   for i = 1, #move_group_names do
     if move_group_names[i] == self.configuration.move_group_name then
       index = i
-      print(self.configuration.move_group_name, ' index = ', index)
+      printf("Move group: %s (with index: %d)", self.configuration.move_group_name, index)
     end
   end
   --local index = 1
@@ -130,8 +132,8 @@ end
 function HandEye:getEndEffectors(move_groups)
   local move_group_names, move_group_details = move_groups.motion_service:queryAvailableMoveGroups()
   local rc = {}
-  print('HandEye:getEndEffectors(): move_group_names')
-  print(move_group_names)
+  --print('HandEye:getEndEffectors(): move_group_names')
+  --print(move_group_names)
 
   if #move_group_names == 1 then -- only one move group (e.g. UR)
     rc.tcp_frame_of_reference = move_group_details[move_group_names[1]].end_effector_link_names[1]
@@ -166,7 +168,7 @@ local function createPatternLocalizer(self)
   local pattern_localizer = PatternLocalisation()
   pattern_localizer.circleFinderParams.minArea = 300
   pattern_localizer.circleFinderParams.maxArea = 4000
-  pattern_localizer:setPatternIDdictionary(torch.load("patternIDdictionary.t7"))
+  pattern_localizer:setPatternIDdictionary(torch.load("/home/xamla/Rosvita.Control/lua/auto_calibration/patternIDdictionary.t7"))
   pattern_localizer:setDBScanParams(100, 10) -- (130, 10)
   pattern_localizer.debugParams = { circleSearch = false, clustering = false, pose = false }
   pattern_localizer:setPatternData(pattern_geometry[2], pattern_geometry[1], pattern_geometry[3])
@@ -272,6 +274,7 @@ function HandEye:calibrate(imgData)
   torch.save(file_output_path, imagesTakenForHandPatternCalib)
   local link_target = path.join('..', self.calibration_folder_name, 'imagesTakenForHandPatternCalib.t7')
   local current_output_path = path.join(self.current_path, 'imagesTakenForHandPatternCalib.t7')
+  os.execute('rm -f ' .. current_output_path)
   os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
 
   -- perform cross validation
@@ -291,7 +294,7 @@ function HandEye:calibrate(imgData)
     torch.save(file_output_path, bestHESolution)
     link_target = path.join('..', self.calibration_folder_name, 'HandEye.t7')
     current_output_path = path.join(self.current_path, 'HandEye.t7')
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     self.H_camera_to_tcp = bestHESolution
   else
@@ -299,7 +302,7 @@ function HandEye:calibrate(imgData)
     torch.save(file_output_path, bestHESolution)
     link_target = path.join('..', self.calibration_folder_name, 'HandPattern.t7')
     current_output_path = path.join(self.current_path, 'HandPattern.t7')
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     self.H_pattern_to_tcp = bestHESolution
   end
@@ -309,14 +312,14 @@ function HandEye:calibrate(imgData)
     torch.save(file_output_path, Hc)
     link_target = path.join('..', self.calibration_folder_name, 'Hc_patternToCam.t7')
     current_output_path = path.join(self.current_path, 'Hc_patternToCam.t7')
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
   else
     file_output_path = path.join(output_path, 'Hc_camToPattern.t7')
     torch.save(file_output_path, Hc)
     link_target = path.join('..', self.calibration_folder_name, 'Hc_camToPattern.t7')
     current_output_path = path.join(self.current_path, 'Hc_camToPattern.t7')
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
   end
 
@@ -324,7 +327,7 @@ function HandEye:calibrate(imgData)
   torch.save(file_output_path, Hg)
   link_target = path.join('..', self.calibration_folder_name, 'Hg_tcpToBase.t7')
   current_output_path = path.join(self.current_path, 'Hg_tcpToBase.t7')
-  os.execute('rm ' .. current_output_path)
+  os.execute('rm -f ' .. current_output_path)
   os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
 
   -- create links at the 'current' folder
@@ -339,7 +342,7 @@ function HandEye:calibrate(imgData)
     torch.save(file_output_path, patternBaseTrafo)
     link_target = path.join('..', self.calibration_folder_name, 'PatternBase.t7')
     current_output_path = path.join(self.current_path, 'PatternBase.t7')
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     return bestHESolution, patternBaseTrafo
   else
@@ -351,7 +354,7 @@ function HandEye:calibrate(imgData)
     torch.save(file_output_path, cameraBaseTrafo)
     link_target = path.join('..', self.calibration_folder_name, 'LeftCamBase.t7')
     current_output_path = path.join(self.current_path, 'LeftCamBase.t7')
-    os.execute('rm ' .. current_output_path)
+    os.execute('rm -f ' .. current_output_path)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     return bestHESolution, cameraBaseTrafo
   end
