@@ -17,11 +17,10 @@
   th ../../lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
   ```
   **Note**: To permanently save calibration results, it is important to run the calibration script from your projects folder!
-* -> The **calibration main menu** will appear in the terminal. <br />
-  Now, simply press:
-  * f (Full calibraton cycle) <br />
-  
-  or press the following sequence:
+* -> The **calibration main menu** will appear in the terminal.
+* Now, simply press:
+  * f (Full calibraton cycle)  
+* or press the following sequence:
   * c (Capture calibration images)
   * a (Calibrate camera)
   * s (Save calibration)
