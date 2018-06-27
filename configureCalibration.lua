@@ -385,11 +385,6 @@ local function homeGripper()
 end
 
 
-local function ackGripper()
-  auto_calibration:ackGripper()
-end
-
-
 local function showActuatorMenu()
   local menu_options = {
     { 'h', 'Move to start pose', moveToStartPose },
@@ -402,7 +397,6 @@ local function showActuatorMenu()
     { 'o', 'Open gripper (release)', openGripper },
     { 'g', 'Close gripper (grip)', closeGripper },
     { 'x', 'Home gripper', homeGripper },
-    { 'a', 'Ack gripper', ackGripper },
     { 'ESC', 'Return to main menu...', false },
   }
   prompt:showMenu('Actuator Menu', menu_options);

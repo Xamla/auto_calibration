@@ -307,10 +307,14 @@ local function runFullCycle(wait)
     saveCalibration()
     handEye()
   else
-    pickCalibrationTarget(false)
-    runCaptureSequence(false)
-    returnCalibrationTarget(false)
-    calibrateCamera(false)
+    print('Want to pick a calibration target?')
+    print('Press \'Enter\' for \'Yes\', \'ESC\' for \'No\'.')
+    local go_pick = prompt:waitEnterOrEsc()
+    if go_pick then
+      pickCalibrationTarget()
+    end
+    runCaptureSequence()
+    calibrateCamera()
     saveCalibration()
     handEye()
   end
@@ -358,7 +362,7 @@ local function showMainMenu()
   {
     { 'h', 'Move to start pose', moveToStartPose },
     { 'p', 'Pick calibration target', pickCalibrationTarget },
-    { 'r', 'Return calibration target', returnCalibrationTarget },
+    --{ 'r', 'Return calibration target', returnCalibrationTarget },
     { 'c', 'Capture calibration images', runCaptureSequence },
     { 'a', 'Calibrate camera', calibrateCamera },
     { 'b', 'Hand-eye calibration', handEye },
