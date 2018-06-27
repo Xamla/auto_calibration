@@ -7,7 +7,7 @@
   th ../../lua/auto_calibration/configureCalibration.lua
   ```
   **Note**: To permanently save a configuration, it is important to run the configuration script from your projects folder!
-* -> The configuration **main menu** will appear in the terminal. 
+* -> The **configuration main menu** will appear in the terminal. 
   * Now you can select the robot move group for calibration, the circle pattern id, the gripper, the camera type, etc. ...  
   * Moreover, you can teach base poses, capture poses and evaluation poses for the calibration. 
   * **Hint**: Base Poses are mainly used for picking a calibration target. If you don't want to pick a calibration target, only teach a start pose and successively press return afterwards for the remaining base poses. 
@@ -17,15 +17,15 @@
   th ../../lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
   ```
   **Note**: To permanently save calibration results, it is important to run the calibration script from your projects folder!
-* -> The calibration **main menu** will appear in the terminal. 
-  Now, simply pres e.g.:
+* -> The **calibration main menu** will appear in the terminal. 
+  Now, simply press e.g.:
   * c (Capture calibration images)
   * a (Calibrate camera)
   * s (Save calibration)
   * b (Hand-eye calibration)
   * e (Evaluate calibration)
 * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
-* **Note**: At the moment, hande-eye is only possible for a stereo camera setup.
+* **Note**: At the moment, hande-eye calibration only works with stereo camera setups.
 
 ### Some notes about the result folder structure:
 * Captured images will be stored in ``./calibration/capture/``
