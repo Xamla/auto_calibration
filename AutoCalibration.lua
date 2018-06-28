@@ -42,6 +42,7 @@ require 'GenICamClient'
 require 'multiPattern.PatternLocalisation'
 
 local grippers = require 'xamlamoveit.grippers.env'
+local gripper_force = 20
 
 local ConfigurationCalibration = require 'ConfigurationCalibration' --class to manage the calibration data
 
@@ -65,6 +66,7 @@ local function constructGripper(grippers, key, nh)
   local gripper_action_name = nil
     
   if string.find(key, 'robotiq') ~= nil then
+    gripper_force = 50
     gripper_action_name = string.format('%s/gripper_command', key)
     return grippers['GenericRosGripperClient'].new(nh, gripper_action_name)
   elseif string.find(key, 'wsg') ~= nil then
@@ -120,6 +122,9 @@ function AutoCalibration:__init(configuration, move_group, camera_client, sl_stu
   self.move_group = move_group
   self.camera_client = camera_client
   self.sl_studio = sl_studio
+  if string.find(self.configuration.gripper_key, 'robotiq') then
+    gripper_force = 50
+  end
 
   local ok, err = pcall(function() initializeGripperServices(self) end)
   if not ok then
@@ -214,7 +219,7 @@ end
 function AutoCalibration:pickCalibrationTarget()
   self.gripper:home()
   print('close the gripper')
-  self.gripper:move{width=0.0, speed=0.2, force=20, stop_on_block=false} -- move closed
+  self.gripper:move{width=0.0, speed=0.2, force=gripper_force, stop_on_block=false} -- move closed
   local base_poses = self.configuration.base_poses
   assert(base_poses ~= nil, 'Base poses are not defined.')
   print('move to start')
@@ -297,7 +302,7 @@ end
 function AutoCalibration:closeGripper()
   if self.gripper ~= nil then
     print('close the gripper')
-    self.gripper:move{width=0.0, speed=0.2, force=20, stop_on_block=false} -- move closed
+    self.gripper:move{width=0.0, speed=0.2, force=gripper_force, stop_on_block=false} -- move closed
   else
     print('Need to initialize the gripper')
   end
@@ -307,7 +312,7 @@ end
 function AutoCalibration:openGripper()
   if self.gripper ~= nil then
     print('open the gripper')
-    self.gripper:move{width=0.06, speed=0.2} -- move open
+    self.gripper:move{width=0.06, speed=0.2, force=gripper_force} -- move open
   else
     print('Need to initialize the gripper')
   end
