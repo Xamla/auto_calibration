@@ -21,7 +21,7 @@ For more information on Rosvita, visit
 
 #### Calibration pattern requirements:
 
-For all camera and hand-eye calibrations one of our [circle patterns with ids]() has to be used.
+For all camera and hand-eye calibrations one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (see this folder: **Patterns_with_ID.pdf**) has to be used.
 For a high-quality print of one of these patterns contact http://xamla.com/en/.
 
 
@@ -58,7 +58,7 @@ In more detail, the **calibration pipeline** is as follows:
     * e (Evaluate calibration)
   * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
   * **Note**: At the moment, hande-eye calibration only works with stereo camera setups.
-  * **Note**: For all calibration processes one of our [circle patterns with ids]() is required.
+  * **Note**: For all calibration processes one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (see this folder: **Patterns_with_ID.pdf**) is required.
   
 ### Hand eye calibration
 
