@@ -1,3 +1,23 @@
+--[[
+  PatternLocalisation.lua
+
+  Copyright (c) 2018, Xamla and/or its affiliates. All rights reserved.
+
+  This program is free software; you can redistribute it and/or
+  modify it under the terms of the GNU General Public License
+  as published by the Free Software Foundation; either version 2
+  of the License, or any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+--]]
+
 local cv = require "cv"
 cv.flann = require "cv.flann"
 require "cv.highgui"
@@ -7,7 +27,9 @@ require "cv.calib3d"
 require "cv.imgcodecs"
 require "cv.features2d"
 
+
 local PatternLocalisation = torch.class("PatternLocalisation")
+
 
 function PatternLocalisation:__init()
   self.patDictData = {}
@@ -17,70 +39,15 @@ function PatternLocalisation:__init()
   self.pattern.height = 1
   self.pattern.pointDist = 0
 
-  self.colorTab = {
-    -- list of colors for visualisation
-    {255, 0, 0},
-    {255, 170, 0},
-    {95, 204, 41},
-    {0, 102, 153},
-    {180, 61, 204},
-    {204, 0, 0},
-    {153, 102, 0},
-    {42, 255, 0},
-    {0, 127, 255},
-    {255, 0, 255},
-    {255, 128, 128},
-    {255, 204, 102},
-    {0, 153, 51},
-    {0, 77, 153},
-    {153, 0, 128},
-    {255, 106, 77},
-    {255, 213, 0},
-    {0, 255, 128},
-    {0, 85, 255},
-    {255, 102, 229},
-    {153, 77, 61},
-    {153, 128, 0},
-    {61, 204, 133},
-    {0, 51, 153},
-    {255, 0, 170},
-    {255, 85, 0},
-    {255, 255, 0},
-    {0, 255, 212},
-    {102, 136, 204},
-    {153, 77, 128},
-    {153, 51, 0},
-    {255, 255, 128},
-    {0, 153, 128},
-    {0, 0, 255},
-    {153, 0, 77},
-    {255, 153, 102},
-    {153, 153, 77},
-    {0, 255, 255},
-    {0, 0, 204},
-    {255, 128, 191},
-    {255, 128, 0},
-    {173, 204, 20},
-    {0, 204, 204},
-    {153, 102, 255},
-    {255, 0, 85},
-    {153, 77, 0},
-    {170, 255, 0},
-    {0, 213, 255},
-    {170, 0, 255},
-    {255, 77, 136},
-    {255, 179, 102},
-    {112, 153, 31},
-    {0, 128, 153},
-    {102, 0, 153},
-    {153, 0, 26},
-    {153, 115, 77},
-    {191, 255, 128},
-    {0, 170, 255},
-    {122, 61, 153},
-    {153, 77, 89}
+  self.colorTab = {  -- list of colors for visualisation
+    {255,0,0}, {255,170,0}, {95,204,41}, {0,102,153}, {180,61,204}, {204,0,0}, {153,102,0}, {42,255,0}, {0,127,255}, {255,0,255},
+    {255,128,128}, {255,204,102}, {0,153,51}, {0,77,153}, {153,0,128}, {255,106,77}, {255,213,0}, {0,255,128}, {0,85,255}, {255,102,229},
+    {153,77,61}, {153,128,0}, {61,204,133}, {0,51,153}, {255,0,170}, {255,85,0}, {255,255,0}, {0,255,212}, {102,136,204}, {153,77,128},
+    {153,51,0}, {255,255,128}, {0,153,128}, {0,0,255}, {153,0,77}, {255,153,102}, {153,153,77}, {0,255,255}, {0,0,204}, {255,128,191},
+    {255,128,0}, {173,204,20}, {0,204,204}, {153,102,255}, {255,0,85}, {153,77,0}, {170,255,0}, {0,213,255}, {170,0,255}, {255,77,136},
+    {255,179,102}, {112,153,31}, {0,128,153}, {102,0,153}, {153,0,26}, {153,115,77}, {191,255,128}, {0,170,255}, {122,61,153}, {153,77,89}
   }
-
+  
   self:generateDefaultCircleFinderParams()
 
   self.camIntrinsics = nil
@@ -92,7 +59,7 @@ function PatternLocalisation:__init()
     pose = false
   }
 
-  -- parameters for DBScan, see https://en.wikipedia.org/wiki/DBSCAN#Algorithm for details
+  -- parameters for DBScan
   self.DBScanEps = 80 -- defines the size of the point neighbourhood
   self.DBScanMinPts = 6 -- minimum number of points required to form a dense region
 
@@ -108,10 +75,12 @@ function PatternLocalisation:__init()
   self.imgShowRescale = 1.0
 end
 
+
 function PatternLocalisation:setDBScanParams(eps, minPts)
   self.DBScanEps = eps
   self.DBScanMinPts = minPts
 end
+
 
 function PatternLocalisation:setPatternData(width, height, pointDist)
   self.pattern.width = width
@@ -119,47 +88,45 @@ function PatternLocalisation:setPatternData(width, height, pointDist)
   self.pattern.pointDist = pointDist
 end
 
+
 function PatternLocalisation:setPatternIDdictionary(dict)
   self.patDictData = dict
 end
+
 
 function PatternLocalisation:setCamIntrinsics(camCalib)
   self.camIntrinsics = camCalib
 end
 
+
 function PatternLocalisation:setStereoCalibration(stereoCalib)
   self.stereoCalibration = stereoCalib
 end
 
+
 function PatternLocalisation:generateDefaultCircleFinderParams()
   self.circleFinderParams = cv.SimpleBlobDetector_Params {}
-
   self.circleFinderParams.thresholdStep = 5
   self.circleFinderParams.minThreshold = 10
   self.circleFinderParams.maxThreshold = 230
-
   self.circleFinderParams.minRepeatability = 3
   self.circleFinderParams.minDistBetweenBlobs = 5
-
   self.circleFinderParams.filterByColor = false
   self.circleFinderParams.blobColor = 0
-
   self.circleFinderParams.filterByArea = true -- area of the circle in pixels
   self.circleFinderParams.minArea = 200
   self.circleFinderParams.maxArea = 1000
-
   self.circleFinderParams.filterByCircularity = true
   self.circleFinderParams.minCircularity = 0.6
   self.circleFinderParams.maxCircularity = 10
-
   self.circleFinderParams.filterByInertia = false
   self.circleFinderParams.minInertiaRatio = 0.6
   self.circleFinderParams.maxInertiaRatio = 10
-
   self.circleFinderParams.filterByConvexity = true
   self.circleFinderParams.minConvexity = 0.8
   self.circleFinderParams.maxConvexity = 10
 end
+
 
 function PatternLocalisation:plotCrosshair(img, posX, posY, crossSize)
   local irSize = {x = img:size()[2], y = img:size()[1]} -- to get x, y img size
@@ -223,6 +190,7 @@ function PatternLocalisation:plotCrosshair(img, posX, posY, crossSize)
   end
 end
 
+
 -- Generate ground truth circle center points of the calibration pattern.
 -- Z is set to 0 for all points.
 function PatternLocalisation:generatePatternPoints(pointsX, pointsY, pointSize)
@@ -240,9 +208,9 @@ function PatternLocalisation:generatePatternPoints(pointsX, pointsY, pointSize)
   return corners
 end
 
+
 function PatternLocalisation:rotVectorToMat3x3(vec)
   -- transform a rotation vector as e.g. provided by solvePnP to a 3x3 rotation matrix using the Rodrigues' rotation formula
-  -- see e.g. http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#void%20Rodrigues%28InputArray%20src,%20OutputArray%20dst,%20OutputArray%20jacobian%29
   local theta = torch.norm(vec)
   local r = vec / theta
   r = torch.squeeze(r)
@@ -251,6 +219,7 @@ function PatternLocalisation:rotVectorToMat3x3(vec)
 
   return torch.eye(3) * math.cos(theta) + (r * r:t()) * (1 - math.cos(theta)) + mat * math.sin(theta)
 end
+
 
 function PatternLocalisation:mirrorPatternPoints(points, patWidth, patHeight, imgDebug)
   -- resort points
@@ -274,6 +243,7 @@ function PatternLocalisation:mirrorPatternPoints(points, patWidth, patHeight, im
 
   return pointsResorted
 end
+
 
 function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, doDebug, imgShowInput)
   doDebug = doDebug or false
@@ -333,6 +303,7 @@ function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, d
   return camPoseFinal, points
 end
 
+
 function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam, doDebug, imgShowInput)
   local whichCam = whichCam or "left"
   local doDebug = doDebug or false
@@ -340,11 +311,11 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   local camPoseFinal
 
   stereoCalib = self.stereoCalibration
-  local leftCamMat = stereoCalib.camLeftMatrix --stereoCalib.intrinsicLeftCam
-  local rightCamMat = stereoCalib.camRightMatrix --stereoCalib.intrinsicRightCam
-  local leftDistCoeffs = stereoCalib.camLeftDistCoeffs --stereoCalib.distLeftCam
-  local rightDistCoeffs = stereoCalib.camRightDistCoeffs --stereoCalib.distRightCam
-  local rightLeftCamTrafo = stereoCalib.trafoLeftToRightCam --stereoCalib.trafoLeftCamRightCam
+  local leftCamMat = stereoCalib.camLeftMatrix
+  local rightCamMat = stereoCalib.camRightMatrix
+  local leftDistCoeffs = stereoCalib.camLeftDistCoeffs
+  local rightDistCoeffs = stereoCalib.camRightDistCoeffs
+  local rightLeftCamTrafo = stereoCalib.trafoLeftToRightCam
 
   -- Stereo Rectify:
   local R = rightLeftCamTrafo[{{1, 3}, {1, 3}}]:double()
@@ -409,10 +380,6 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   local imgKeypointsRight = imgRightRectUndist:clone()
   cv.drawKeypoints {imgLeftRectUndist, keypointsLeft, imgKeypointsLeft}
   cv.drawKeypoints {imgRightRectUndist, keypointsRight, imgKeypointsRight}
-  -- Show detected (drawn) keypoints
-  --cv.imshow{"Keypoints 1", imgKeypointsLeft}
-  --cv.imshow{"Keypoints 2", imgKeypointsRight}
-  --cv.waitKey{-1}
 
   local ok1, circlesGridPointsLeft =
     cv.findCirclesGrid {
@@ -433,8 +400,6 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
 
   local ok = ok1 and ok2
   if ok then
-    --print("camPoseFinal:")
-    --print(camPoseFinal)
     -- Save 2d grid points.
     local nPoints = self.pattern.width * self.pattern.height
     local leftProjPoints = torch.DoubleTensor(2, nPoints) -- 2D coordinates (x,y) x #Points
@@ -529,7 +494,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
     camPoseFinal[{{1, 3}, {1}}] = new_x_unit_vec
     camPoseFinal[{{1, 3}, {2}}] = new_y_unit_vec
     camPoseFinal[{{1, 3}, {3}}] = z_unit_vec
-    camPoseFinal[{{1, 3}, {4}}] = pointsInCamCoords[1] -- = Stuetzvektor
+    camPoseFinal[{{1, 3}, {4}}] = pointsInCamCoords[1] -- = support vector
     camPoseFinal[4][4] = 1
   else
     print("PATTERN NOT FOUND!!!")
@@ -538,6 +503,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
 
   return ok, camPoseFinal
 end
+
 
 function PatternLocalisation:calcCamPoseMirrored(pointsResorted)
   local points3d = self:generatePatternPoints(self.pattern.width, self.pattern.height, self.pattern.pointDist)
@@ -560,6 +526,7 @@ function PatternLocalisation:calcCamPoseMirrored(pointsResorted)
 
   return camPoseFinal
 end
+
 
 -- Calculates a rectangle of a point set (torch.Tensor of dim n,2) , usefull for ROI or cropping
 function PatternLocalisation:calcBoundingRect(pointTensor, border, imgWidth, imgHeight)
@@ -595,6 +562,7 @@ function PatternLocalisation:calcBoundingRect(pointTensor, border, imgWidth, img
   return rect
 end
 
+
 -- Calculates the cam pose for a pattern. The pattern has to be the only pattern within the region of interesst defined by rectROI
 function PatternLocalisation:calcCamPoseROI(inputImg, rectROI, doDebug)
   doDebug = doDebug or false
@@ -621,14 +589,12 @@ function PatternLocalisation:calcCamPoseROI(inputImg, rectROI, doDebug)
     cv.destroyWindow {winname = "imgPatROI"}
   end
 
-  --  return self:calcCamPose(imgROI, self.camIntrinsics, self.pattern)
   return self:processImg(imgROI)
 end
 
+
 function PatternLocalisation:findCircles(inputImg, doDebug)
   -- Setup SimpleBlobDetector parameters.
-  -- See https://www.learnopencv.com/blob-detection-using-opencv-python-c/ for parameter overview
-
   local blobDetector = cv.SimpleBlobDetector {self.circleFinderParams}
   local resultsTmp = blobDetector:detect {image = inputImg}
   local results = {}
@@ -672,6 +638,7 @@ function PatternLocalisation:findCircles(inputImg, doDebug)
 
   return results
 end
+
 
 -- cluster: list, containing index numbers of list circleCenters
 
@@ -734,6 +701,7 @@ function PatternLocalisation:expandCluster(
   end
 end
 
+
 function PatternLocalisation:DBScan(circleCenters, eps, minNPoints)
   local clusterList = {}
 
@@ -785,6 +753,7 @@ function PatternLocalisation:DBScan(circleCenters, eps, minNPoints)
 
   return clusterList
 end
+
 
 -- Debugging function
 function PatternLocalisation:espChecking(circleCentersInput, queryX, queryY, debugImg)
@@ -838,6 +807,7 @@ function PatternLocalisation:espChecking(circleCentersInput, queryX, queryY, deb
   cv.waitKey {-1}
 end
 
+
 -- Set all pixels to color color, except inside the polygon defined by points
 -- points is torch.IntTensor(nPolygonPoints, 2)
 
@@ -872,6 +842,7 @@ function PatternLocalisation:RGBToGray(inputImg)
   return img
 end
 
+
 function PatternLocalisation:grayToRGB(inputImg)
   local img
   if inputImg:dim() == 3 and inputImg:size(3) > 1 then
@@ -882,6 +853,7 @@ function PatternLocalisation:grayToRGB(inputImg)
 
   return img
 end
+
 
 function PatternLocalisation:getPatPointCenterColor(imgGray, point)
   local pointColor = 0.0
@@ -894,6 +866,7 @@ function PatternLocalisation:getPatPointCenterColor(imgGray, point)
 
   return pointColor
 end
+
 
 function PatternLocalisation:getID(dict, pat)
   local id
@@ -914,6 +887,7 @@ function PatternLocalisation:getID(dict, pat)
 
   return id, err
 end
+
 
 function PatternLocalisation:getPatternId(imgInput, points, pattern)
   local imgGray = torch.squeeze(self:RGBToGray(imgInput))
@@ -985,6 +959,7 @@ function PatternLocalisation:getPatternId(imgInput, points, pattern)
   return id, err, patNum
 end
 
+
 function PatternLocalisation:processImg(inputImg)
   local camImgUndist = inputImg
 
@@ -1053,9 +1028,6 @@ function PatternLocalisation:processImg(inputImg)
             shift = shiftBits
           }
         end
-
-        --        cv.putText{imgDraw, text=""..area, org={x=mean[1][1], y=mean[1][2]}, fontFace=cv.FONT_HERSHEY_SIMPLEX,
-        --                    fontScale=0.7, color={70, 70, 70}, thickness=2}
 
         --   Draw the polygon hull
         for j = 1, hull:size(1) - 1 do
