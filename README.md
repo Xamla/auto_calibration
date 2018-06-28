@@ -21,7 +21,7 @@ For more information on Rosvita, visit
 
 ### Camera calibration
 
-Calibration of Ximea cameras or GenICam based cameras as single or stereo camera setup mounted onboard (onto the robot) or extern can easily be performed by running the scripts **configureCalibration.lua** and **runCalibration.lua**.
+Calibration of Ximea cameras or GenICam based cameras as single or stereo camera setup mounted onboard (on the robot) or extern can easily be performed by running the scripts **configureCalibration.lua** and **runCalibration.lua**.
 
 In more detail, the **calibration pipeline** is as follows:
 * In Rosvita load or create a project (e.g. with UR5 or SDA10D, cameras and gripper), compile it and start ROS.
@@ -72,12 +72,9 @@ Then press
 ```
 * b (Hand-eye calibration)
 ```
-If you want the evaluate your hand-eye calibration by some error metrics to be able to compare it with alternative hand-eye calibrations, you first have to teach some tcp poses for evaluation (such that the cameras capture the pattern from different angles and shifts):
+If you want the evaluate your hand-eye calibration by some error metrics to be able to compare it with alternative hand-eye calibrations, you first have to teach some tcp poses for evaluation (such that the cameras can capture the pattern from different angles and shifts):
 ```
 th ../../lua/auto_calibration/configureCalibration.lua
-```
-and
-```
 * e (Teach poses for evaluation)
 ```
 
