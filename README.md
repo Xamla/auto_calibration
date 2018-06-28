@@ -19,6 +19,12 @@ For more information on Rosvita, visit
 3. [End effector calibration](#end-effector-calibration)
 
 
+#### Calibration pattern requirement:
+
+For all camera and hand-eye calibrations one of our [circle patterns with ids]() has to be used.
+For a high-quality print of one of these patterns contact http://xamla.com/en/.
+
+
 ### Camera calibration
 
 Calibration of Ximea cameras or GenICam based cameras as single or stereo camera setup mounted onboard (on the robot) or extern can easily be performed by running the scripts **configureCalibration.lua** and **runCalibration.lua**.
@@ -52,7 +58,7 @@ In more detail, the **calibration pipeline** is as follows:
     * e (Evaluate calibration)
   * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
   * **Note**: At the moment, hande-eye calibration only works with stereo camera setups.
-  * **Note**: For all calibration processes a cirlce pattern of the form ... is required.
+  * **Note**: For all calibration processes one of our [circle patterns with ids]() is required.
   
 ### Hand eye calibration
 
