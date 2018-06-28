@@ -1,5 +1,29 @@
-### Calibration Pipeline:
+## Autocalibration
 
+Copyright (c) 2018, Xamla and/or its affiliates. All rights reserved.
+
+This package containts scripts for camera and hand-eye calibration.
+
+License information can be found in the LICENSE file.
+
+This distribution may include materials developed by third parties.
+For license and attribution notices for these materials, please refer to the LICENSE file.
+
+For more information on Rosvita, visit
+  http://xamla.com/en/
+
+#### Major features are:
+
+1. [Camera calibration (single and stereo setup)](#camera-calibration)
+2. [Hand-Eye calibration (including evaluation)](#hand-eye-calibration)
+3. [End effector calibration](#end-effector-calibration)
+
+
+### Camera calibration
+
+Calibration of Ximea cameras or GenICam based cameras as single or stereo camera setup mounted onboard (onto the robot) or extern can easily be performed by running the scripts **configureCalibration.lua** and **runCalibration.lua**.
+
+In more detail, the **calibration pipeline** is as follows:
 * In Rosvita load or create a project (e.g. with UR5 or SDA10D, cameras and gripper), compile it and start ROS.
 * With the Rosvita terminal go into your project folder and start the configuration script:
   ```
@@ -28,8 +52,45 @@
     * e (Evaluate calibration)
   * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
   * **Note**: At the moment, hande-eye calibration only works with stereo camera setups.
+  * **Note**: For all calibration processes a cirlce pattern of the form ... is required.
+  
+### Hand eye calibration
 
-### Some notes about the result folder structure:
+In case of an **onboard camera setup**, the hand-eye calibration detects the transformation (rotation and translation) between the tool center point (tcp) of the robot and a previously calibrated stereo camera system mounted on the robot.
+
+In case of an **extern camera setup**, the calibration pattern has to be mounted on the robot (e.g. grasped by the gripper) and the hand-eye calibration detects the transformation between the tcp and the pattern.
+
+**Note**: At the moment, the hand-eye calibration **requires a stereo camera setup**. Addition of a version working with a single camera, will be added soon.
+
+To be able to perform hand-eye calibration, the camera calibration has to be performed and saved first (see above). <br />
+To run the hand-eye calibration, type the following commands into the Rosvita terminal:
+```
+cd /home/xamla/Rosvita.Control/projects/<your_project_folder>
+th ../../lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
+```
+Then press
+```
+* b (Hand-eye calibration)
+```
+If you want the evaluate your hand-eye calibration by some error metrics to be able to compare it with alternative hand-eye calibrations, you first have to teach some tcp poses for evaluation (such that the cameras capture the pattern from different angles and shifts):
+```
+th ../../lua/auto_calibration/configureCalibration.lua
+```
+and
+```
+* e (Teach poses for evaluation)
+```
+
+### End effector calibration
+
+Calibration of an end effector, e.g. a gripper tip can be performed by running the script **endEffectorCalibration.lua**.
+
+To calibrate the end effector (e.g. the gripper tip), it has to be moved to a fixed point from at least 4 or better more different directions.
+
+To relocate the tool center point (tcp) to the end effector in Rosvita, add a **tcp_link** to the file **robotModel/main.xacro** of your project folder. As **origin xyz** of your new tcp_link choose the **translation vector of** your calculated **tcp<->end effector transformation**. Then compile the **main.xacro** and adapt your robot configuration ("tip link" of move group and "parent link" of end effector). For more details see the terminal output when running the script.
+  
+  
+### Some notes about the result folder structure of the camera and hand-eye calibration:
 * Captured images will be stored in ``./calibration/capture/``
 * Robot poses will be stored in ``./calibration/<date>_<time>/jsposes.t7``
 * Stereo calibration will be stored in ``./calibration/<date>_<time>/stereo_cams_<serial1>_<serial2>.t7``
