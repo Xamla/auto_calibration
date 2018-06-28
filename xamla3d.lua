@@ -1,3 +1,23 @@
+--[[
+  xamla3d.lua
+
+  Copyright (c) 2018, Xamla and/or its affiliates. All rights reserved.
+
+  This program is free software; you can redistribute it and/or
+  modify it under the terms of the GNU General Public License
+  as published by the Free Software Foundation; either version 2
+  of the License, or any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+--]]
+
 local lfs = require 'lfs'
 local cv = require 'cv'
 require 'cv.highgui'
@@ -24,17 +44,16 @@ function xamla3d.intersectLines (p1,p2, p3, p4)
 end
 
 
-
 -- Returns the distance of a point to a line defined by two points P1 and P2
 function xamla3d.pointLineDistance (P1, P2, X)
- local nom = (P2.y - P1.y)*X.x - (P2.x-P1.x)*X.y + P2.x*P1.y-P2.y*P1.x
- local denom = math.sqrt((P2.y+P1.y)^2 + (P2.x + P2.y)^2)
- return math.abs(nom / denom)
+  local nom = (P2.y - P1.y)*X.x - (P2.x-P1.x)*X.y + P2.x*P1.y-P2.y*P1.x
+  local denom = math.sqrt((P2.y+P1.y)^2 + (P2.x + P2.y)^2)
+  return math.abs(nom / denom)
 end
 
 
 function xamla3d.axisAngleToRotMatrix(vec)
-   local vec_3x1 = vec:view(3,1):clone()
+  local vec_3x1 = vec:view(3,1):clone()
   local theta = torch.norm(vec_3x1)
   local R
   if (theta < 1e-14) then
@@ -43,18 +62,14 @@ function xamla3d.axisAngleToRotMatrix(vec)
     local alpha = math.cos(theta)
     local beta = math.sin(theta)
     local gamma = 1-math.cos(theta)
-    
     local omega = vec_3x1 / theta
     local omegav = xamla3d.getSkewSymmetricMatrix(omega:view(3,1)) 
-    
-     local A = omega*omega:t();
-  
-     R = torch.eye(3,3)*alpha + omegav*beta + A*gamma;
+    local A = omega*omega:t();
+    R = torch.eye(3,3)*alpha + omegav*beta + A*gamma
   end
-
   return R
-  
 end
+
 
 function xamla3d.rotMatrixToAxisAngle(rotation_3x3)
  local R = rotation_3x3:clone()
@@ -165,6 +180,7 @@ function xamla3d.drawEpipolarLineWithF(F, image2, pts2d_image1_2xX, image1)
   end
 end
 
+
 function xamla3d.drawEpipolarLine (Pose1_4x4, Pose2_4x4, intrinsic_3x3, image2, pts2d_image1_2xX)
   local F = xamla3d.getFundamentalMatrixFromFullPose(Pose1_4x4, Pose2_4x4, intrinsic_3x3)
 
@@ -224,6 +240,7 @@ function xamla3d.getReprojectionError (P,measurements, X)
   
   return re, torch.sum(re)
 end
+
 
 function xamla3d.ransacTriangulation (P, measurements, reThreshold, maxIterations)
   if (#P < 2) then
@@ -475,8 +492,8 @@ for i = 1,m:size()[1] do
 end
 
 write("})\n")
-
 end
+
 
 function xamla3d.utils.isFile(name)
   if type(name)~="string" then return false end
@@ -519,5 +536,6 @@ function xamla3d.writeImageToFile(directory, filename, image)
   
   cv.imwrite{directory.."/"..filename, image}
 end
+
 
 return xamla3d

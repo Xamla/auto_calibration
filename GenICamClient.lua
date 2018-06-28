@@ -1,3 +1,23 @@
+--[[
+  GenICamClient.lua
+
+  Copyright (c) 2018, Xamla and/or its affiliates. All rights reserved.
+
+  This program is free software; you can redistribute it and/or
+  modify it under the terms of the GNU General Public License
+  as published by the Free Software Foundation; either version 2
+  of the License, or any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+--]]
+
 local torch = require 'torch'
 local ros = require 'ros'
 local cv = require 'cv'
@@ -11,12 +31,8 @@ function GenICamClient:__init(nodeHandle, mode, permute_channels, rgb_conversion
   nodeHandle = nodeHandle or ros.NodeHandle()
 
   self.mode = mode or "genicam_stereo"
-  local captureServiceName = 'camera_aravis_node/capture' --string.format('%s/capture', self.mode)
-  --print("captureServiceName:")
-  --print(captureServiceName)
-  local sendCommandServiceName = 'camera_aravis_node/sendcommand' --string.format('%s/send_command', self.mode)
-  --print("sendCommandServiceName:")
-  --print(sendCommandServiceName)
+  local captureServiceName = 'camera_aravis_node/capture'
+  local sendCommandServiceName = 'camera_aravis_node/sendcommand'
 
   self.captureClient = nodeHandle:serviceClient(captureServiceName, ros.SrvSpec('camera_aravis/Capture'), persistent)
   self.sendCommandClient = nodeHandle:serviceClient(sendCommandServiceName, ros.SrvSpec('camera_aravis/SendCommand'), persistent)
@@ -73,7 +89,7 @@ local function msg2image(self, m)
       img = img:permute(3,1,2)
     end
   elseif m.encoding == "mono8" then
-    img = m.data:view(m.height, m.width)  -- directly return image without copying for max performance
+    img = m.data:view(m.height, m.width)
   elseif m.encoding == "mono16" then
     img = torch.ByteTensor(m.width * m.height, 2)
     img:copy(m.data)

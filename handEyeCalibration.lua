@@ -1,7 +1,88 @@
-local xamla3d = require('xamla3d')
+--[[
+  handEyeCalibration.lua
+
+  Copyright (c) 2018, Xamla and/or its affiliates. All rights reserved.
+
+  This program is free software; you can redistribute it and/or
+  modify it under the terms of the GNU General Public License
+  as published by the Free Software Foundation; either version 2
+  of the License, or any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+--]]
 
 
 local xamlaHandEye = {}
+
+
+-- returns the skew symmetric matrix from a vector
+local function getSkewSymmetricMatrix(vec)
+  local S = torch.zeros(3,3)
+  S[1][2] = -vec[3]
+  S[1][3] =  vec[2]
+  S[2][1] =  vec[3]
+  S[2][3] = -vec[1]
+  S[3][1] = -vec[2]
+  S[3][2] =  vec[1]
+  return S
+end
+
+
+-- converts a 3x3 rotation matrix into an axis-angle representation or rotation
+local function rotMatrixToAxisAngle(rotation_3x3)
+  local R = rotation_3x3:clone()
+  local U,S,V = torch.svd(R)
+  R = U * V:t()
+  local tr = (torch.trace(R)-1)/2 
+  local theta = math.acos(tr)
+  local out
+  if (math.sin(theta) >= 1e-12) then    
+    local vth = 1/(2*math.sin(theta)) 
+    local om1 = torch.DoubleTensor({R[3][2]-R[2][3], R[1][3]-R[3][1], R[2][1]-R[1][2]}):view(3,1):t():clone()
+    local om = om1 * vth
+    out = om*theta
+  else
+    if tr > 0 then   -- case norm(om) = 0          
+      print("Case1")  
+      print(R)
+      out = torch.DoubleTensor(3):zero()
+    else     
+      print("Case2")
+      local sign = torch.DoubleTensor(3,1)
+      sign[1][1] = 1
+      sign[{{2,3}, 1}] = (((R[{1,{2,3}}]:ge(0))*2):type('torch.DoubleTensor'))-1 
+      out = ((torch.sqrt((torch.diag(R)+1)/2)):cmul(sign))* theta             
+    end   
+  end
+  return out
+end
+
+
+-- converts an axis-angle representation of rotation into a 3x3 rotation matrix
+local function axisAngleToRotMatrix(vec)
+  local vec_3x1 = vec:view(3,1):clone()
+  local theta = torch.norm(vec_3x1)
+  local R
+  if (theta < 1e-14) then
+    R = torch.eye(3,3)
+  else
+    local alpha = math.cos(theta)
+    local beta = math.sin(theta)
+    local gamma = 1-math.cos(theta)
+    local omega = vec_3x1 / theta
+    local omegav = getSkewSymmetricMatrix(omega:view(3,1)) 
+    local A = omega*omega:t()
+    R = torch.eye(3,3)*alpha + omegav*beta + A*gamma
+  end
+  return R
+end
 
 
 local function pinv(x)
@@ -31,12 +112,10 @@ function xamlaHandEye.getAlignError(Hg, Hc, HandEye)
   local Hg_ij = {}
   local Hc_ij = {}
 
-
   local nEquations = ((#Hg) * (#Hg-1))/2
 
   local coeff = torch.DoubleTensor(3*nEquations, 3)
   local const = torch.DoubleTensor(3*nEquations, 1)
-
 
   local cnt = 0
 
@@ -48,8 +127,6 @@ function xamlaHandEye.getAlignError(Hg, Hc, HandEye)
       table.insert(Hc_ij, dHc)
     end
   end
-
-
 
  for i = 1,#Hg_ij do
   coeff[{{(i-1)*3+1,(i-1)*3 + 3 }, {}}] = Hg_ij[i][{{1,3},{1,3}}] - torch.eye(3,3)
@@ -95,15 +172,6 @@ function xamlaHandEye.calibrateViaCrossValidation(Hg, Hc, nPoses, nTrials)
     local HE, resAlignOpt, res_angle = xamlaHandEye.calibrate(HgSamples, HcSamples)
 
     print("maxTAlignment: " ..torch.max(resAlignOpt) .." MaxRAlignemnt:" ..torch.max(res_angle))
---    print("medianTAlignment: ")
---    print(torch.median(torch.squeeze(resAlignOpt)))
---    print(" medianRAlignemnt: ")
-
---    local rMedian, index = torch.max(torch.squeeze(res_angle))
---    print(" medianRAlignemnt: "..torch.squeeze(rMedian))
-
---    local rMax = torch.max(torch.squeeze(res_angle))
---    print(" medianRAlignemnt: "..rMax)
 
     if torch.max(res_angle) < 0.8 then
       local HgVal = {}
@@ -153,7 +221,6 @@ function xamlaHandEye.calibrate(Hg, Hc)
   local coeff = torch.DoubleTensor(3*nEquations, 3)
   local const = torch.DoubleTensor(3*nEquations, 1)
 
-
   local cnt = 0
 
   -- calculate the difference between all pairs of two robot and two camera poses
@@ -173,9 +240,9 @@ function xamlaHandEye.calibrate(Hg, Hc)
      Pg_ij = Pg_ij:clone():view(3,1)
      Pc_ij = Pc_ij:clone():view(3,1)
 
-     -- for explanation of the next two lines, see paper ;-)
+     -- for explanation of the next two lines, see paper of Tsai and Lenz, 1987
      -- (creats a set of linear equations)
-     coeff[{{cnt*3+1,cnt*3 + 3 }, {}}] = xamla3d.getSkewSymmetricMatrix(Pg_ij + Pc_ij)
+     coeff[{{cnt*3+1,cnt*3 + 3 }, {}}] = getSkewSymmetricMatrix(Pg_ij + Pc_ij)
      const[{{cnt*3+1, cnt*3 + 3},  1}] = Pc_ij:view(3,1) - Pg_ij:view(3,1)
      cnt = cnt+1
 
@@ -215,8 +282,6 @@ function xamlaHandEye.calibrate(Hg, Hc)
   local Tcg = torch.inverse(AtA) * Atb
 
   local res = coeff * Tcg - const
-  --print(torch.min(torch.abs(res)))
-  --print(torch.max(torch.abs(res)))
 
   -- combine rotation and translation component to final result
   local H = torch.eye(4,4)
@@ -232,7 +297,7 @@ local function unit(v)
   end
 
 function xamlaHandEye.modRodrigues(R)
-  local P = xamla3d.rotMatrixToAxisAngle(R)
+  local P = rotMatrixToAxisAngle(R)
   local theta = torch.norm(P)
 
   if theta ~= 0 then
@@ -248,14 +313,12 @@ function xamlaHandEye.invModRodrigues(P)
   if torch.norm(P) > 1e-14 then
     local theta =math.asin(torch.norm(P) / 2) * 2
 
-    R = xamla3d.axisAngleToRotMatrix(unit(P) * theta)
+    R = axisAngleToRotMatrix(unit(P) * theta)
   end
 
   return R
 
 end
-
-
 
 
 return xamlaHandEye

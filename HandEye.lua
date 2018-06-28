@@ -1,12 +1,32 @@
 --[[
-  Hand-Pattern or Hand-Eye calibration, depending on if we have an extern or an onboard camera setup.
-  Tested with UR5 and SDA10D.
-  Current limitations:
-  * Currently only working with stereo camera setup -> will be extended to single camera setup soon..
-]]
+  HandEye.lua
+
+  Copyright (c) 2018, Xamla and/or its affiliates. All rights reserved.
+
+  This program is free software; you can redistribute it and/or
+  modify it under the terms of the GNU General Public License
+  as published by the Free Software Foundation; either version 2
+  of the License, or any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+--]]
+
+
+-- Hand-Pattern or Hand-Eye calibration, depending on if we have an 
+-- extern or an onboard camera setup.
+-- Tested with UR5 and SDA10D.
+-- Current limitations:
+--  * Currently only working with stereo camera setup 
+--    -> will be extended to single camera setup soon..
 package.path = package.path .. ";../../lua/auto_calibration/?.lua"
 package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
-local xamla3d = require 'xamla3d'
 local calib = require 'handEyeCalibration'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
 local xutils = require 'xamlamoveit.xutils'
@@ -40,11 +60,7 @@ end
 local slstudio = tryRequire('slstudio')
 
 local offline = false -- in case we are reading images from files and not really connecting to the driver set offline to true
-
--- Important: Everything has to be in meters.
-
 local M_PI = 3.14159265359
-
 local handEye = {}
 
 
@@ -529,7 +545,6 @@ local function metricCalculation(prediction, detection)
   -- rotation error (norm of difference of Euler angles)
   local err_r = torch.norm(H1:getRotation():toTensor() - H2:getRotation():toTensor())
 
-  -- from http://cmp.felk.cvut.cz/~hodanto2/data/hodan2016evaluation.pdf
   -- error given  by  the  angle  from  the  axis–angle  representation  of rotation
   -- the angle of rotation of a matrix R in the axis–angle representation is given by arccos( {Tr(R) -1} /2)
   -- if R1 ~= R2 => R1 * R2.inv() ~= Identity => angle of rotation ~= 0

@@ -1,6 +1,25 @@
------------------------------------------------
+--[[
+  endEffectorCalibration_env.lua
+
+  Copyright (c) 2018, Xamla and/or its affiliates. All rights reserved.
+
+  This program is free software; you can redistribute it and/or
+  modify it under the terms of the GNU General Public License
+  as published by the Free Software Foundation; either version 2
+  of the License, or any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+--]]
+
+
 -- End effector (e.g. gripper tip) calibration
------------------------------------------------
 local ros = require 'ros'
 local tf = ros.tf
 local moveit = require 'moveit'
@@ -15,18 +34,16 @@ local nh = ros.NodeHandle()
 local sp = ros.AsyncSpinner() -- background job
 sp:start()
 
---Create you dedicated motion service
+--Create motion service
 local motion_service = motionLibrary.MotionService(nh)
-
 
 -- Determine a sphere that fits best through all given points.
 -- Least squares solution to: min ||AX-B||_F 
--- (see "torch.gels" at https://github.com/torch/torch7/blob/master/doc/maths.md)
 function determineSphereFromPointTable(spherePoints)
 
   assert(#spherePoints > 3)
-  -- TODO: Check for further errors! 
-  -- At least 4 points have to be not on a line or plane (i.e. matrix A has to be of full rank) 
+  -- Note: At least 4 points have to be not on a line or plane 
+  --       (i.e. matrix A has to be of full rank) 
 
   local A = torch.DoubleTensor(#spherePoints, 4)
   for i=1,#spherePoints do
@@ -82,7 +99,6 @@ function determineSphereFromPointTable(spherePoints)
   print(string.format("Radius of sphere: r = %f\n", r))
 
   return X, center, r
-
 end
 
 
@@ -175,8 +191,7 @@ function main()
   print(tcp_pose_4x4)
 
   local tip_pose_4x4 = torch.DoubleTensor(4,4)
-  --tip_pose_4x4[{{1,3},{1,3}}] = torch.eye(3) -- case 1: tip has same orientation as base
-  tip_pose_4x4[{{1,3},{1,3}}] = tcp_pose_4x4[{{1,3},{1,3}}] -- case 2: tip has same orientation as tcp
+  tip_pose_4x4[{{1,3},{1,3}}] = tcp_pose_4x4[{{1,3},{1,3}}] -- tip has same orientation as tcp
   tip_pose_4x4[1][4] = sphere_center[1]
   tip_pose_4x4[2][4] = sphere_center[2]
   tip_pose_4x4[3][4] = sphere_center[3]
@@ -209,6 +224,7 @@ function main()
   print("After compiling the new robot configuration, starting ROS, changing into the 'World View' and choosing the corresponding move group and end effector, the interactive marker appears at the new tcp link.")
   print("\n")
   print("Note: Precision of the new \'tcp_link\' depends on how precisely the gripper tip had been moved to a fixed point from different directions.")
+  
   motion_service:shutdown()
   sp:stop()
   ros.shutdown()
