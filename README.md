@@ -19,7 +19,7 @@ For more information on Rosvita, visit
 3. [End effector calibration](#end-effector-calibration)
 
 
-#### Calibration pattern requirement:
+#### Calibration pattern requirements:
 
 For all camera and hand-eye calibrations one of our [circle patterns with ids]() has to be used.
 For a high-quality print of one of these patterns contact http://xamla.com/en/.
