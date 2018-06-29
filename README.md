@@ -21,7 +21,7 @@ For more information on Rosvita, visit
 
 #### Calibration pattern requirements:
 
-For all camera and hand-eye calibrations one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (see this folder: **Patterns_with_ID.pdf**) has to be used.
+For all camera and hand-eye calibrations one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (**Patterns_with_ID.pdf**) has to be used.
 For a high-quality print of one of these patterns contact http://xamla.com/en/.
 
 
@@ -34,7 +34,7 @@ In more detail, the **calibration pipeline** is as follows:
 * With the Rosvita terminal go into your project folder and start the configuration script:
   ```
   cd /home/xamla/Rosvita.Control/projects/<your_project_folder>
-  th ../../lua/auto_calibration/configureCalibration.lua
+  th /home/xamla/Rosvita.Control/lua/auto_calibration/configureCalibration.lua
   ```
   **Note**: To permanently save a configuration, it is important to run the configuration script from your projects folder!
 * -> The **configuration main menu** will appear in the terminal. 
@@ -44,7 +44,7 @@ In more detail, the **calibration pipeline** is as follows:
   * Don't forget to **save** the configuration by **pressing the 's' button**.
 * Next run the calibration script from your project folder and with the previously saved configuration: 
   ```
-  th ../../lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
+  th /home/xamla/Rosvita.Control/lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
   ```
   **Note**: To permanently save calibration results, it is important to run the calibration script from your projects folder!
 * -> The **calibration main menu** will appear in the terminal.
@@ -58,7 +58,7 @@ In more detail, the **calibration pipeline** is as follows:
     * e (Evaluate calibration)
   * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
   * **Note**: At the moment, hande-eye calibration only works with stereo camera setups.
-  * **Note**: For all calibration processes one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (see this folder: **Patterns_with_ID.pdf**) is required.
+  * **Note**: For all calibration processes one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (**Patterns_with_ID.pdf**) is required.
   
 ### Hand eye calibration
 
@@ -72,7 +72,7 @@ To be able to perform hand-eye calibration, the camera calibration has to be per
 To run the hand-eye calibration, type the following commands into the Rosvita terminal:
 ```
 cd /home/xamla/Rosvita.Control/projects/<your_project_folder>
-th ../../lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
+th /home/xamla/Rosvita.Control/lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
 ```
 Then press
 ```
@@ -80,13 +80,16 @@ Then press
 ```
 If you want the evaluate your hand-eye calibration by some error metrics to be able to compare it with alternative hand-eye calibrations, you first have to teach some tcp poses for evaluation (such that the cameras can capture the pattern from different angles and shifts):
 ```
-th ../../lua/auto_calibration/configureCalibration.lua
+th /home/xamla/Rosvita.Control/lua/auto_calibration/configureCalibration.lua
 * e (Teach poses for evaluation)
 ```
 
 ### End effector calibration
 
-Calibration of an end effector, e.g. a gripper tip can be performed by running the script **endEffectorCalibration.lua**.
+Calibration of an end effector, e.g. a gripper tip can be performed by running the script **endEffectorCalibration.lua**:
+```
+th /home/xamla/Rosvita.Control/lua/auto_calibration/endEffectorCalibration.lua
+```
 
 To calibrate the end effector (e.g. the gripper tip), it has to be moved to a fixed point from at least 4 or better more different directions.
 
