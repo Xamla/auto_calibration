@@ -143,6 +143,10 @@ local function selectGripper()
   end
   menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
   prompt:showMenu('Gripper Selection', menu_options)
+  -- Initialize gripper
+  move_group = motion_service:getMoveGroup(configuration.move_group_name)
+  move_group:setVelocityScaling(0.2)
+  auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, camera_client)
 end
 
 
