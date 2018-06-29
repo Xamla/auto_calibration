@@ -78,7 +78,7 @@ Then press
 ```
 * b (Hand-eye calibration)
 ```
-If you want the evaluate your hand-eye calibration by some error metrics to be able to compare it with alternative hand-eye calibrations, you first have to teach some tcp poses for evaluation (such that the cameras can capture the pattern from different angles and shifts):
+You may want to evaluate your hand-eye calibration by some error metrics to be able to compare it with alternative hand-eye calibrations. Thereto, first you have to teach some tcp poses for evaluation (such that the cameras can capture the pattern from different angles and positions):
 ```
 th /home/xamla/Rosvita.Control/lua/auto_calibration/configureCalibration.lua
 * e (Teach poses for evaluation)
