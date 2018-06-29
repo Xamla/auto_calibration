@@ -217,7 +217,11 @@ end
 function AutoCalibration:moveToStart()
   local base_poses = self.configuration.base_poses
   assert(base_poses ~= nil, 'Base poses are not defined.')
+  --moveJ(self, base_poses['start'])
   assert(base_poses['start'] ~= nil, 'Target position is nil.')
+  self.move_group:moveJoints(base_poses['start'], 0.01)
+
+  --[[
   local handle = self.move_group:moveJointsSupervised(base_poses['start'], 0.05)
   --xutils.enableRawTerminal()
   local input
@@ -242,7 +246,7 @@ function AutoCalibration:moveToStart()
     end
   end
   --xutils.restoreTerminalAttributes()
-  --moveJ(self, base_poses['start'])
+  ]]
 end
 
 
