@@ -57,6 +57,18 @@ end
 
 local slstudio = tryRequire('slstudio')
 
+local function readKeySpinning()
+    local function spin()
+        if not ros.ok() then
+            return false, 'ros shutdown requested'
+        else
+            ros.spinOnce()
+            return true
+        end
+    end
+    return xutils.waitKey(spin)
+end
+
 
 local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalibration)
 
@@ -205,7 +217,32 @@ end
 function AutoCalibration:moveToStart()
   local base_poses = self.configuration.base_poses
   assert(base_poses ~= nil, 'Base poses are not defined.')
-  moveJ(self, base_poses['start'])
+  assert(base_poses['start'] ~= nil, 'Target position is nil.')
+  local handle = self.move_group:moveJointsSupervised(base_poses['start'], 0.05)
+  --xutils.enableRawTerminal()
+  local input
+  local do_interaction = true
+  print('Step through planned trajectory:')
+  print('=====')
+  print("'+'             next position")
+  print("'-'             previous position")
+  print("'ESC' or 'q'    quit")
+  print()
+  while ros.ok() and do_interaction do  
+    input = readKeySpinning()
+    if input == '+' then
+      handle:next()
+    elseif input == '-' then
+      handle:previous()
+    elseif string.byte(input) == 27 or input == 'q' then
+      do_interaction = false
+      handle:abort()
+    elseif input == 'f' then
+      print('feedback: ', handle:getFeedback())
+    end
+  end
+  --xutils.restoreTerminalAttributes()
+  --moveJ(self, base_poses['start'])
 end
 
 
@@ -225,8 +262,13 @@ function AutoCalibration:pickCalibrationTarget()
   print('move to start')
   moveJ(self, base_poses['start'])
   print('open the gripper')
-  local t = self.gripper:move{width=0.05} -- move open
+  local t = self.gripper:move{width=0.05, speed=0.2, force=gripper_force} -- move open
   assert(t:hasCompletedSuccessfully() == true, 'Cannot open gripper.')
+  print("Is the gripper open? Type 1 (Yes) or 2 (No) and press \'Enter\'.")
+  print("1 Yes")
+  print("2 No")
+  local open_check = io.read("*n")
+  assert(open_check == 1)
   print('move to pre pick pose')
   moveJ(self, base_poses['pre_pick_marker'])
   print('move to pick pose')
@@ -235,7 +277,7 @@ function AutoCalibration:pickCalibrationTarget()
   -- If width of calibration target may vary (i.e is assumed to be unknown),
   -- set width to 0.0, otherwise width can be set to the width of our calibration pattern.
   -- The "wsg50" needs the width of the part to be grasped -> set width to 0.0115.
-  t = self.gripper:grasp{width=0.0115, speed=0.2} -- grasp target
+  t = self.gripper:grasp{width=0.0115, speed=0.2, force=gripper_force} -- grasp target
   assert(t:hasCompletedSuccessfully() == true, 'Cannot grasp pattern.')
   --t = self.gripper:move{width=0.0, speed=0.2, force=30, stop_on_block=false} -- move grasp
   --assert(t:hasCompleted() == true, 'Cannot grasp pattern.')
@@ -257,7 +299,7 @@ function AutoCalibration:returnCalibrationTarget()
   sys.sleep(3)
   moveJ(self, base_poses['pick_marker'], self.configuration.velocity_scaling * 0.25)
   print('release calibration target')
-  local t = self.gripper:release{width=0.05, speed=0.2} -- release target
+  local t = self.gripper:release{width=0.05, speed=0.2, force=gripper_force} -- release target
   assert(t:hasCompletedSuccessfully() == true, 'Cannot release pattern.')
   print('move to pre pick (= post return) pose')
   moveJ(self, base_poses['pre_pick_marker'])
