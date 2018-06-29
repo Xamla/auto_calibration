@@ -640,10 +640,14 @@ function HandEye:evaluateCalibrationComplex()
     return
   end
   createPatternLocalizer(self)
+
   local ok, cameraPatternTrafo_old = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
   if not ok then
     print('pattern not found!')
     return ok, cameraPatternTrafo_old
+  end
+  if self.configuration.camera_location_mode == 'extern' then
+    cameraPatternTrafo_old = torch.inverse(cameraPatternTrafo_old)
   end
   print("old camera<->pattern trafo:")
   print(cameraPatternTrafo_old)
@@ -691,6 +695,9 @@ function HandEye:evaluateCalibrationComplex()
     if not ok then
       print('Pattern not found! Taking the next image..')
     else
+      if self.configuration.camera_location_mode == 'extern' then
+        detection = torch.inverse(detection)
+      end
       print("Detected new camera<->pattern trafo:")
       print(detection)
       -- compute some metric
