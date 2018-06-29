@@ -38,7 +38,7 @@ In more detail, the **calibration pipeline** is as follows:
   ```
   **Note**: To permanently save a configuration, it is important to run the configuration script from your projects folder!
 * -> The **configuration main menu** will appear in the terminal. 
-  * Now you can select the robot move group for calibration, the circle pattern id, the gripper, the camera type, etc. ...  
+  * Now you can select the robot move group, the circle pattern id, the gripper, the camera type, etc. ...  
   * Moreover, you can teach base poses, capture poses and evaluation poses for the calibration. 
   * **Hint**: Base Poses are mainly used for picking a calibration target. If you don't want to pick a calibration target, only teach a start pose and successively press return afterwards for the remaining base poses. 
   * Don't forget to **save** the configuration by **pressing the 's' button**.
