@@ -34,7 +34,7 @@ require 'GenICamClient'
 require 'AutoCalibration'
 local HandEye = require 'HandEye'
 
-local offline = false --true  -- in case we are reading images from files and not really connecting to the driver set offline to true
+local offline = false  -- in case we are reading images from files and not really connecting to the driver set offline to true
 
 
 local prompt
@@ -97,7 +97,7 @@ local function runCaptureSequence(wait)
 
     -- check whether we are simulating or not
     if offline then
-      auto_calibration:simulateCapture()
+      auto_calibration:runCaptureSequenceWithoutCapture()
     else
       auto_calibration:runCaptureSequence()
     end
