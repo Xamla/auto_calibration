@@ -18,16 +18,11 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 --]]
 
-package.path = package.path .. ";../../lua/auto_calibration/?.lua"
-package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
 local ros = require 'ros'
 local tf = ros.tf
 local actionlib = ros.actionlib
 local SimpleClientGoalState = actionlib.SimpleClientGoalState
 local xutils = require 'xamlamoveit.xutils'
-local autoCalibration = require 'autoCalibration_env'
-local CalibrationMode = autoCalibration.CalibrationMode
-local CalibrationFlags = autoCalibration.CalibrationFlags
 local xamlamoveit = require 'xamlamoveit'
 local datatypes = xamlamoveit.datatypes
 
@@ -38,13 +33,9 @@ require 'cv.highgui'
 require 'cv.calib3d'
 
 require 'ximea.ros.XimeaClient'
-require 'GenICamClient'
-require 'multiPattern.PatternLocalisation'
 
 local grippers = require 'xamlamoveit.grippers.env'
 local gripper_force = 20
-
-local ConfigurationCalibration = require 'ConfigurationCalibration' --class to manage the calibration data
 
 local function tryRequire(module_name)
   local ok, val = pcall(function() return require(module_name) end)
@@ -70,7 +61,10 @@ local function readKeySpinning()
 end
 
 
-local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autoCalibration)
+local autocal = require 'auto_calibration.env'
+local CalibrationMode = autocal.CalibrationMode
+local CalibrationFlags = autocal.CalibrationFlags
+local AutoCalibration = torch.class('autoCalibration.AutoCalibration', autocal)
 
 
 --creates a gripper client for the specified key
@@ -194,7 +188,7 @@ end
 
 local function createPatternLocalizer(self)
   local pattern_geometry = self.configuration.circle_pattern_geometry
-  local pattern_localizer = PatternLocalisation()
+  local pattern_localizer = autocal.PatternLocalisation()
   pattern_localizer.circleFinderParams.minArea = 300
   pattern_localizer.circleFinderParams.maxArea = 4000
   pattern_localizer:setPatternIDdictionary(torch.load("/home/xamla/Rosvita.Control/lua/auto_calibration/patternIDdictionary.t7"))

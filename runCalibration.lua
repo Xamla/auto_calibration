@@ -18,21 +18,18 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 --]]
 
-package.path = package.path .. ";../../lua/auto_calibration/?.lua"
-package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
 local ros = require 'ros'
 local datatypes = require 'xamlamoveit.datatypes'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
 local xutils = require 'xamlamoveit.xutils'
 local grippers = require 'xamlamoveit.grippers.env'
-local autoCalibration = require 'autoCalibration_env'
-local CalibrationMode = autoCalibration.CalibrationMode
-local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
-require 'ximea.ros.XimeaClient'
-require 'GenICamClient'
 
-require 'AutoCalibration'
-local HandEye = require 'HandEye'
+ac = require 'auto_calibration'
+local CalibrationMode = ac.CalibrationMode
+local BASE_POSE_NAMES = ac.BASE_POSE_NAMES
+
+require 'ximea.ros.XimeaClient'
+
 
 local offline = false  -- in case we are reading images from files and not really connecting to the driver set offline to true
 
@@ -507,7 +504,7 @@ local function main(nh)
   local motion_service = motionLibrary.MotionService(nh)
   local xamla_mg = motionLibrary.MoveGroup(motion_service, configuration.move_group_name) -- motion client
 
-  auto_calibration = autoCalibration.AutoCalibration(configuration, move_group, camera_client)
+  auto_calibration = ac.AutoCalibration(configuration, move_group, camera_client)
   hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, motion_service, camera_client, auto_calibration.gripper, xamla_mg)
   
   local p = io.popen("pwd")

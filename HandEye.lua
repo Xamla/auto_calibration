@@ -25,9 +25,10 @@
 -- Current limitations:
 --  * Currently only working with stereo camera setup 
 --    -> will be extended to single camera setup soon..
-package.path = package.path .. ";../../lua/auto_calibration/?.lua"
-package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
-local calib = require 'handEyeCalibration'
+
+--package.path = package.path .. ";../../lua/auto_calibration/?.lua"
+--package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
+--local calib = require 'handEyeCalibration'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
 local xutils = require 'xamlamoveit.xutils'
 local datatypes = require 'xamlamoveit.datatypes'
@@ -43,8 +44,8 @@ require "cv.features2d"
 require 'image'
 
 require 'ximea.ros.XimeaClient'
-require 'GenICamClient'
-require "multiPattern.PatternLocalisation"
+--require 'GenICamCameraClient'
+--require "multiPattern.PatternLocalisation"
 
 local ros = require 'ros'
 local tf = ros.tf
@@ -61,10 +62,11 @@ local slstudio = tryRequire('slstudio')
 
 local offline = false -- in case we are reading images from files and not really connecting to the driver set offline to true
 local M_PI = 3.14159265359
-local handEye = {}
+--local handEye = {}
 
 
-local HandEye = torch.class('autoCalibration.HandEye', handEye)
+local autocal = require 'auto_calibration.env'
+local HandEye = torch.class('autoCalibration.HandEye', autocal)
 
 
 local function printf(...)
@@ -172,7 +174,7 @@ end
 
 local function createPatternLocalizer(self)
   local pattern_geometry = self.configuration.circle_pattern_geometry
-  local pattern_localizer = PatternLocalisation()
+  local pattern_localizer = autocal.PatternLocalisation()
   pattern_localizer.circleFinderParams.minArea = 300
   pattern_localizer.circleFinderParams.maxArea = 4000
   pattern_localizer:setPatternIDdictionary(torch.load("/home/xamla/Rosvita.Control/lua/auto_calibration/patternIDdictionary.t7"))

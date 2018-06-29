@@ -20,7 +20,8 @@
 
 local torch = require 'torch'
 local datatypes = require 'xamlamoveit.datatypes.env'
-local ConfigurationCalibration = torch.class('ConfigurationCalibration', datatypes)
+local autocal = require 'auto_calibration.env'
+local ConfigurationCalibration = torch.class('ConfigurationCalibration', autocal) --datatypes)
 
 
 function ConfigurationCalibration:__init(
