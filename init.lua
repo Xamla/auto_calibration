@@ -105,13 +105,6 @@ local CalibrationFlags = {
 auto_calibration.CalibrationFlags = CalibrationFlags
 
 
-
-
---autoCalibration = require 'auto_calibration.autoCalibration_env'
---local CalibrationMode = autoCalibration.CalibrationMode
---local CalibrationFlags = autoCalibration.CalibrationFlags
---local BASE_POSE_NAMES = autoCalibration.BASE_POSE_NAMES
-
 GenICamCameraClient = require 'auto_calibration.GenICamCameraClient'
 PatternLocalisation = require 'auto_calibration.PatternLocalisation'
 
@@ -122,7 +115,5 @@ calib = require 'auto_calibration.handEyeCalibration'
 AutoCalibration = require 'auto_calibration.AutoCalibration'
 HandEye = require 'auto_calibration.HandEye'
 
---auto_calibration.configureCalibration = require 'auto_calibration.configureCalibration'
---auto_calibration.runCalibration = require 'auto_calibration.runCalibration'
 
 return auto_calibration
