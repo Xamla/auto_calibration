@@ -66,6 +66,7 @@ local M_PI = 3.14159265359
 
 
 local autocal = require 'auto_calibration.env'
+local CalibrationMode = autocal.CalibrationMode
 local HandEye = torch.class('autoCalibration.HandEye', autocal)
 
 
@@ -98,14 +99,32 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
   -- current folder; contains links to the used calibration files
   self.current_path = path.join(configuration.output_directory, 'current')
 
-  -- assemble the stereo calibration file name based on the serials of the cameras
-  local left_camera = self.configuration.cameras[configuration.left_camera_id]
-  local right_camera = self.configuration.cameras[configuration.right_camera_id]
-  self.left_camera_serial = left_camera.serial
-  self.right_camera_serial = right_camera.serial
-  self.calibration_fn = string.format('stereo_cams_%s_%s.t7', self.left_camera_serial, self.right_camera_serial)
-  self.stereo_calibration_path = path.join(self.current_path, self.calibration_fn)
-  self:loadStereoCalibration(self.stereo_calibration_path)
+  local left_camera = self.configuration.cameras[self.configuration.left_camera_id]
+  local right_camera = self.configuration.cameras[self.configuration.right_camera_id]
+  
+  local mode = self.configuration.calibration_mode
+  if mode == CalibrationMode.SingleCamera then
+    -- assemble the calibration file name based on the serial of the camera
+    if left_camera ~= nil then
+      self.left_camera_serial = left_camera.serial
+      self.calibration_fn_left = string.format('cam_%s.t7', self.left_camera_serial)
+      self.calibration_path_left = path.join(self.current_path, self.calibration_fn_left)
+    end
+    if right_camera ~= nil then
+      self.right_camera_serial = right_camera.serial
+      self.calibration_fn_right = string.format('cam_%s.t7', self.right_camera_serial)
+      self.calibration_path_right = path.join(self.current_path, self.calibration_fn_right)
+    end
+  elseif mode == CalibrationMode.StereoRig then
+    -- assemble the stereo calibration file name based on the serials of the cameras
+    if left_camera ~= nil and right_camera ~= nil then
+      self.left_camera_serial = left_camera.serial
+      self.right_camera_serial = right_camera.serial
+    end
+    self.calibration_fn = string.format('stereo_cams_%s_%s.t7', self.left_camera_serial, self.right_camera_serial)
+    self.stereo_calibration_path = path.join(self.current_path, self.calibration_fn)
+    self:loadStereoCalibration(self.stereo_calibration_path)
+  end
   self.tcp_frame_of_reference, self.tcp_end_effector_name = self:getEndEffectorName()
 end
 
@@ -115,12 +134,30 @@ function HandEye:loadStereoCalibration(stereo_calib_fn)
   if path.exists(stereo_calib_fn) then
     local stereoCalib = torch.load(stereo_calib_fn)
     self.stereoCalibration = stereoCalib
-    self.leftCameraMatrix = stereoCalib.camLeftMatrix --stereoCalib.intrinsicLeftCam
-    self.rightCameraMatrix = stereoCalib.camRightMatrix --stereoCalib.intrinsicRightCam
-    self.leftDistCoeffs = stereoCalib.camLeftDistCoeffs --stereoCalib.distLeftCam
-    self.rightDistCoeffs =  stereoCalib.camRightDistCoeffs --stereoCalib.distRightCam
-    self.rightLeftCamTrafo = stereoCalib.trafoLeftToRightCam  --stereoCalib.trafoLeftCamRightCam
+    self.leftCameraMatrix = stereoCalib.camLeftMatrix
+    self.rightCameraMatrix = stereoCalib.camRightMatrix
+    self.leftDistCoeffs = stereoCalib.camLeftDistCoeffs
+    self.rightDistCoeffs =  stereoCalib.camRightDistCoeffs
+    self.rightLeftCamTrafo = stereoCalib.trafoLeftToRightCam
     print('read stereo calibration file '..stereo_calib_fn)
+  else
+    print('Calibration file '..stereo_calib_fn..' does not exist.')
+    print('Please calibrate cameras first.')
+  end
+end
+
+
+function HandEye:loadCalibration(calib_fn)
+  -- check first if there is an existing calibration file
+  if path.exists(calib_fn) then
+    local calib = torch.load(calib_fn)
+    self.calibration = calib
+    self.cameraMatrix = calib.camMatrix
+    self.distCoeffs = calib.distCoeffs
+    print('read calibration file '..calib_fn)
+  else
+    print('Calibration file '..calib_fn..' does not exist.')
+    print('Please calibrate camera first.')
   end
 end
 
@@ -215,9 +252,20 @@ end
 --         an 'onboard' camera setup or an 'extern' camera setup
 function HandEye:calibrate(imgData)
 
-  --first load the latest stereo calibration file
-  print('HandEye:calibrate loading calibration file: '..self.stereo_calibration_path)
-  self:loadStereoCalibration(self.stereo_calibration_path)
+  --first load the latest calibration file
+  local mode = self.configuration.calibration_mode
+  if mode == CalibrationMode.SingleCamera then
+    if imgData.imgDataLeft ~= nil then
+      print('HandEye:calibrate loading calibration file: '..self.calibration_path_left)
+      self:loadCalibration(self.calibration_path_left)
+    elseif imgData.imgDataRight ~= nil then
+      print('HandEye:calibrate loading calibration file: '..self.calibration_path_right)
+      self:loadCalibration(self.calibration_path_right)
+    end
+  elseif mode == CalibrationMode.StereoRig then
+    print('HandEye:calibrate loading calibration file: '..self.stereo_calibration_path)
+    self:loadStereoCalibration(self.stereo_calibration_path)
+  end
 
   local output_path = path.join(self.configuration.output_directory, self.calibration_folder_name)
   -- the <calibration_name> folder has to exist or be created to be able to store the hand eye matrices
@@ -226,34 +274,54 @@ function HandEye:calibrate(imgData)
   -- load calibration images and TCP data
   local imgDataLeft = imgData.imgDataLeft
   local imgDataRight = imgData.imgDataRight
-
+  local imgDataSingle = imgDataLeft
+  if imgDataLeft == nil then
+    imgDataSingle = imgDataRight
+  end
+  
   local Hg = {}
   local Hc = {}
 
   -- extract pattern points:
   createPatternLocalizer(self)
   local imagesTakenForHandPatternCalib = {}
-  for i, fn in ipairs(imgDataLeft.imagePaths) do
-
-    local fnLeft = imgDataLeft.imagePaths[i]
-    local fnRight = imgDataRight.imagePaths[i]
-    local imgLeft = cv.imread {fnLeft}
-    local imgRight = cv.imread {fnRight}
-    local robotPose = imgData.jsposes.recorded_poses[i]
-
-    local ok, patternPoseRelToCamera = self.pattern_localizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left')
-    if ok then
-      local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
-      local cameraPatternTrafo = cameraPoseRelToPattern
-      if self.configuration.camera_location_mode == 'onboard' then
-        print('We have an onboard camera setup, thus we have to use \"patternPoseRelToCamera\".')
-        cameraPatternTrafo = patternPoseRelToCamera
-      else
-        print('We have an extern camera setup, thus we have to use \"cameraPoseRelToPattern\"')
+  if mode == CalibrationMode.StereoRig then
+    for i, fn in ipairs(imgDataLeft.imagePaths) do
+      local fnLeft = imgDataLeft.imagePaths[i]
+      local fnRight = imgDataRight.imagePaths[i]
+      local imgLeft = cv.imread {fnLeft}
+      local imgRight = cv.imread {fnRight}
+      local robotPose = imgData.jsposes.recorded_poses[i]
+      local ok, patternPoseRelToCamera = self.pattern_localizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left')
+      if ok then
+        local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
+        local cameraPatternTrafo = cameraPoseRelToPattern -- This is used for an extern camera setup.
+        if self.configuration.camera_location_mode == 'onboard' then
+          -- We have an onboard camera setup, thus we have to use patternPoseRelToCamera.
+          cameraPatternTrafo = patternPoseRelToCamera
+        end
+        table.insert(Hc, cameraPatternTrafo)
+        table.insert(Hg, robotPose)
+        table.insert(imagesTakenForHandPatternCalib, i)
       end
-      table.insert(Hc, cameraPatternTrafo)
-      table.insert(Hg, robotPose)
-      table.insert(imagesTakenForHandPatternCalib, i)
+    end
+  elseif mode == CalibrationMode.SingleCamera then
+    for i, fn in ipairs(imgDataSingle.imagePaths) do
+      local fn = imgDataSingle.imagePaths[i]
+      local img = cv.imread {fn}
+      local robotPose = imgData.jsposes.recorded_poses[i]
+      local patternPoseRelToCamera, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+      if patternPoseRelToCamera ~= nil then
+        local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
+        local cameraPatternTrafo = cameraPoseRelToPattern -- This is used for an extern camera setup.
+        if self.configuration.camera_location_mode == 'onboard' then
+          -- We have an onboard camera setup, thus we have to use patternPoseRelToCamera.
+          cameraPatternTrafo = patternPoseRelToCamera
+        end
+        table.insert(Hc, cameraPatternTrafo)
+        table.insert(Hg, robotPose)
+        table.insert(imagesTakenForHandPatternCalib, i)
+      end
     end
   end
 
@@ -352,6 +420,7 @@ function HandEye:calibrate(imgData)
   else
     local cameraBaseTrafo = Hg[1] * bestHESolution * Hc[1]
     print("base -> camera trafo (i.e. camera pose in base coordinates):")
+    print("Note: For a stereo setup, this is the pose of the left camera with serial: "..self.configuration.cameras[self.configuration.left_camera_id].serial)
     print(cameraBaseTrafo)
     self.H_cam_to_base = cameraBaseTrafo
     file_output_path = path.join(output_path, 'LeftCamBase.t7')
@@ -365,7 +434,7 @@ function HandEye:calibrate(imgData)
 end
 
 
--- captures a pair of stereo images and 
+-- captures a camera image, or in case of 'StereoRig' mode a pair of stereo images 
 -- detects the camera<->pattern transformation
 function HandEye:detectPattern()
   --1. capture pair of images
@@ -373,17 +442,39 @@ function HandEye:detectPattern()
   local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
   local left_img
   local right_img
-  left_img = self:captureImageNoWait(left_camera_config)
-  right_img = self:captureImageNoWait(right_camera_config)
-  --2. detect camera<->pattern trafo
-  if left_img == nil or right_img == nil then
-    print("Left and/or right image are \'nil\'.")
-    return nil
+  local img
+  if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+    if left_camera_config ~= nil then
+      img = self:captureImageNoWait(left_camera_config)
+    elseif right_camera_config ~= nil then
+      img = self:captureImageNoWait(right_camera_config)
+    end
+  elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
+    left_img = self:captureImageNoWait(left_camera_config)
+    right_img = self:captureImageNoWait(right_camera_config)
   end
+  --2. detect camera<->pattern trafo
   createPatternLocalizer(self)
-  local ok, cameraPatternTrafo = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
-  if not ok then
-    return nil
+  local ok = false
+  local cameraPatternTrafo = nil
+  if self.configuration.calibration_mode == CalibrationMode.StereoRig then
+    if left_img == nil or right_img == nil then
+      print("Left and/or right image are \'nil\'.")
+      return nil
+    end
+    ok, cameraPatternTrafo = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+    if not ok then
+      return nil
+    end
+  elseif self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+    if img == nil then
+      print("Image is \'nil\'.")
+      return false, nil
+    end
+    cameraPatternTrafo, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+    if cameraPatternTrafo == nil then
+      return nil
+    end
   end
   return cameraPatternTrafo
 end
@@ -415,7 +506,7 @@ function HandEye:generateRelativeTranslation(O)
 end
 
 
--- captures a pair of stereo images
+-- captures a camera image, or in case of 'StereoRig' mode a pair of stereo images 
 -- detects the camera<->pattern transformation
 -- predicts the camera<->pattern transformation for the case of a robot motion
 -- performs the robot motion
@@ -446,27 +537,62 @@ function HandEye:movePattern()
   local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
   local left_img
   local right_img
+  local img
   if not offline then
-    left_img = self:captureImageNoWait(left_camera_config)
-    right_img = self:captureImageNoWait(right_camera_config)
+    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+      if left_camera_config ~= nil then
+        img = self:captureImageNoWait(left_camera_config)
+      elseif right_camera_config ~= nil then
+        img = self:captureImageNoWait(right_camera_config)
+      end
+    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
+      left_img = self:captureImageNoWait(left_camera_config)
+      right_img = self:captureImageNoWait(right_camera_config)
+    end
   else
     -- offline (only for testing cases) -> load last captured images
     local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
     nr = #self.configuration.capture_poses
-    left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-    right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-    left_img = cv.imread{left_img_path}
-    right_img = cv.imread{right_img_path}
+    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+      local img_path
+      if left_camera_config ~= nil then
+        img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+      elseif right_camera_config ~= nil then
+        img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+      end
+      img = cv.imread{img_path}
+    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
+      left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+      right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+      left_img = cv.imread{left_img_path}
+      right_img = cv.imread{right_img_path}
+    end
   end
-  if left_img == nil or right_img == nil then
-    print("Left and/or right image are \'nil\'.")
-    return false, nil
-  end
+
   createPatternLocalizer(self)
-  local ok, cameraPatternTrafo = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
-  if not ok then
-    print('pattern not found!')
-    return ok, cameraPatternTrafo
+
+  local ok = false
+  local cameraPatternTrafo = nil
+  if self.configuration.calibration_mode == CalibrationMode.StereoRig then
+    if left_img == nil or right_img == nil then
+      print("Left and/or right image are \'nil\'.")
+      return false, nil
+    end
+    ok, cameraPatternTrafo = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+    if not ok then
+      print('pattern not found!')
+      return ok, cameraPatternTrafo
+    end
+  elseif self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+    if img == nil then
+      print("Image is \'nil\'.")
+      return false, nil
+    end
+    cameraPatternTrafo, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+    if cameraPatternTRafo == nil then
+      print('pattern not found!')
+      return false, cameraPatternTrafo
+    end
   end
   print('detected cameraPatternTrafo before motion:')
   print(cameraPatternTrafo)
@@ -595,7 +721,8 @@ end
 -- the corresponding tcp poses are calculated via forward kinematic and 
 -- the new camera<->pattern trafo is predicted for each of these poses.
 -- After that the robot moves are actually performed and the new camera<->pattern trafos
--- are measured via plane fit and compared with the prediction.
+-- are measured via plane fit (for stereo setup) or solvePnP (for single camera setup)
+-- and compared with the prediction.
 function HandEye:evaluateCalibrationComplex()
 
   -- set the folder to 'current'
@@ -625,28 +752,61 @@ function HandEye:evaluateCalibrationComplex()
   local right_camera_config = self.configuration.cameras[self.configuration.right_camera_id]
   local left_img
   local right_img
+  local img
   if not offline then
-    left_img = self:captureImageNoWait(left_camera_config)
-    right_img = self:captureImageNoWait(right_camera_config)
+    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+      if left_camera_config ~= nil then
+        img = self:captureImageNoWait(left_camera_config)
+      elseif right_camera_config ~= nil then
+        img = self:captureImageNoWait(right_camera_config)
+      end
+    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
+      left_img = self:captureImageNoWait(left_camera_config)
+      right_img = self:captureImageNoWait(right_camera_config)
+    end
   else
     -- offline (only for testing cases) -> load last captured images
     local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
-    local nr = #self.configuration.capture_poses
-    local left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-    local right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-    left_img = cv.imread{left_img_path}
-    right_img = cv.imread{right_img_path}
+    nr = #self.configuration.capture_poses
+    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+      local img_path
+      if left_camera_config ~= nil then
+        img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+      elseif right_camera_config ~= nil then
+        img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+      end
+      img = cv.imread{img_path}
+    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
+      local left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+      local right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+      left_img = cv.imread{left_img_path}
+      right_img = cv.imread{right_img_path}
+    end
   end
-  if left_img == nil or right_img == nil then
-    print("Left and/or right image are \'nil\'.")
-    return
-  end
+
   createPatternLocalizer(self)
 
-  local ok, cameraPatternTrafo_old = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
-  if not ok then
-    print('pattern not found!')
-    return ok, cameraPatternTrafo_old
+  local ok = false
+  local cameraPatternTrafo_old = nil
+  if self.configuration.calibration_mode == CalibrationMode.StereoRig then
+    if left_img == nil or right_img == nil then
+      print("Left and/or right image are \'nil\'.")
+      return
+    end
+    ok, cameraPatternTrafo_old = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+    if not ok then
+      print('pattern not found!')
+      return ok, cameraPatternTrafo_old
+    end
+  elseif self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+    if img == nil then
+      print("Image is \'nil\'.")
+      return false, nil
+    end
+    cameraPatternTrafo_old, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+    if cameraPatternTrafo_old == nil then
+      print('pattern not found!')
+      return false, cameraPatternTrafo_old
   end
   if self.configuration.camera_location_mode == 'extern' then
     cameraPatternTrafo_old = torch.inverse(cameraPatternTrafo_old)
@@ -654,6 +814,8 @@ function HandEye:evaluateCalibrationComplex()
   print("old camera<->pattern trafo:")
   print(cameraPatternTrafo_old)
 
+  -- 3. for each evaluation pose predict the corresponding camera<->pattern trafo
+  --    and compare it with the measured camera<->pattern trafo after movement
   local end_effector = self.move_group:getEndEffector(self.tcp_end_effector_name)
   local eval_poses = self.configuration.eval_poses
   if next(eval_poses) == nil then
@@ -666,8 +828,6 @@ function HandEye:evaluateCalibrationComplex()
   local rotation_error2 = {}
   local err_t_avg, err_t_axes_avg, err_r1_avg, err_r2_avg = 0, 0, 0, 0
   local count = 0
-  -- 3. for each evaluation pose predict the corresponding camera<->pattern trafo
-  --    and compare it with the measured camera<->pattern trafo after movement
   for i = 1, #eval_poses do
     print(string.format("Predict the camera<->pattern trafo for evaluation pose %d:", i))
     assert(torch.isTypeOf(eval_poses[i], datatypes.JointValues), string.format("Evaluation pose %d is not of type \'datatypes.JointValues\'!", i))
@@ -687,31 +847,64 @@ function HandEye:evaluateCalibrationComplex()
     self.move_group:moveJoints(eval_poses[i])
     tcp_new = self.move_group:getCurrentPose():toTensor()
 
-    left_img = self:captureImageNoWait(left_camera_config)
-    right_img = self:captureImageNoWait(right_camera_config)
-    if left_img == nil or right_img == nil then
-      print('Please connect cameras first!')
-      return false
-    end
-    local ok, detection = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
-    if not ok then
-      print('Pattern not found! Taking the next image..')
-    else
-      if self.configuration.camera_location_mode == 'extern' then
-        detection = torch.inverse(detection)
+    local ok = false
+    local detection = nil
+    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+      if left_camera_config ~= nil then
+        img = self:captureImageNoWait(left_camera_config)
+      elseif right_camera_config ~= nil then
+        img = self:captureImageNoWait(right_camera_config)
       end
-      print("Detected new camera<->pattern trafo:")
-      print(detection)
-      -- compute some metric
-      translation_error[i], translation_error_axes[i], rotation_error1[i], rotation_error2[i] = metricCalculation(prediction, detection)
-      err_t_avg = err_t_avg + translation_error[i]
-      err_t_axes_avg = err_t_axes_avg + translation_error_axes[i]
-      err_r1_avg = err_r1_avg + rotation_error1[i]
-      err_r2_avg = err_r2_avg + rotation_error2[i]
-      count = count + 1
-      tcp_old = tcp_new
-      cameraPatternTrafo_old = detection
-    end     
+      if img == nil then
+        print('Please connect cameras first!')
+        return false
+      end
+      detection, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+      if detection == nil then
+        print('Pattern not found! Taking the next image..')
+      else
+        if self.configuration.camera_location_mode == 'extern' then
+          detection = torch.inverse(detection)
+        end
+        print("Detected new camera<->pattern trafo:")
+        print(detection)
+        -- compute some metric
+        translation_error[i], translation_error_axes[i], rotation_error1[i], rotation_error2[i] = metricCalculation(prediction, detection)
+        err_t_avg = err_t_avg + translation_error[i]
+        err_t_axes_avg = err_t_axes_avg + translation_error_axes[i]
+        err_r1_avg = err_r1_avg + rotation_error1[i]
+        err_r2_avg = err_r2_avg + rotation_error2[i]
+        count = count + 1
+        tcp_old = tcp_new
+        cameraPatternTrafo_old = detection
+      end
+    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
+      left_img = self:captureImageNoWait(left_camera_config)
+      right_img = self:captureImageNoWait(right_camera_config)
+      if left_img == nil or right_img == nil then
+        print('Please connect cameras first!')
+        return false
+      end
+      ok, detection = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+      if not ok then
+        print('Pattern not found! Taking the next image..')
+      else
+        if self.configuration.camera_location_mode == 'extern' then
+          detection = torch.inverse(detection)
+        end
+        print("Detected new camera<->pattern trafo:")
+        print(detection)
+        -- compute some metric
+        translation_error[i], translation_error_axes[i], rotation_error1[i], rotation_error2[i] = metricCalculation(prediction, detection)
+        err_t_avg = err_t_avg + translation_error[i]
+        err_t_axes_avg = err_t_axes_avg + translation_error_axes[i]
+        err_r1_avg = err_r1_avg + rotation_error1[i]
+        err_r2_avg = err_r2_avg + rotation_error2[i]
+        count = count + 1
+        tcp_old = tcp_new
+        cameraPatternTrafo_old = detection
+      end
+    end
   end
   err_t_avg = err_t_avg / count
   err_t_axes_avg = err_t_axes_avg / count

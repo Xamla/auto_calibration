@@ -31,7 +31,7 @@ local BASE_POSE_NAMES = ac.BASE_POSE_NAMES
 require 'ximea.ros.XimeaClient'
 
 
-local offline = false  -- in case we are reading images from files and not really connecting to the driver set offline to true
+local offline = true  -- in case we are reading images from files and not really connecting to the driver set offline to true
 
 
 local prompt
@@ -280,8 +280,38 @@ local function handEye()
     return false
   end
 
-  local left_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.left_camera_id].serial)
-  local right_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.right_camera_id].serial)
+  local left_cam_data = nil
+  local right_cam_data = nil
+  local mode = configuration.calibration_mode
+  if mode == CalibrationMode.SingleCamera or mode == CalibrationMode.StructuredLightSingleCamera then
+    -- still need to ask which camera, there need not only be one
+    ids = {}
+    for cam_index, serial in pairs(configuration.cameras) do
+      print('camera=', configuration.cameras[cam_index].serial)
+      ids[#ids + 1] = configuration.cameras[cam_index].serial
+    end
+    local serial = prompt:chooseFromList(ids, 'Available cameras:')
+    while serial == nil do
+      print('No camera selected!')
+      serial = prompt:chooseFromList(ids, 'Available cameras:')
+    end
+    print('selected camera:', serial)    
+
+    if configuration.cameras[configuration.left_camera_id] ~= nil then
+      if configuration.cameras[configuration.left_camera_id].serial == serial then
+        left_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.left_camera_id].serial)
+      end
+    end
+    if configuration.cameras[configuration.right_camera_id] ~= nil then
+      if configuration.cameras[configuration.right_camera_id].serial == serial then
+        right_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.right_camera_id].serial)
+      end
+    end
+  elseif mode == CalibrationMode.StereoRig then
+    left_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.left_camera_id].serial)
+    right_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.right_camera_id].serial)
+  end
+
   local img_data = {}
   img_data.imgDataLeft = left_cam_data
   img_data.imgDataRight = right_cam_data
