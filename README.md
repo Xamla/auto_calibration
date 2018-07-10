@@ -1,16 +1,24 @@
-## Autocalibration
+<img alt="Rosvita Beta Logo" src="./rosvita-beta.svg" width="400"/>
 
-Copyright (c) 2018, Xamla and/or its affiliates. All rights reserved.
+This software is part of [Rosvita](http://www.rosvita.com/), the easiest and fastest way to get started with robot programming and ROS. You are free to use this source code under the terms of GPLv2 in your own projects, but we recommend to have a look at the Rosvita IDE, where everything is already set up and you can start in no time. Check it out, Rosvita is free for research and non-commercial use.
 
-This package containts scripts for camera and hand-eye calibration.
 
-License information can be found in the LICENSE file.
+# Autocalibration
 
-This distribution may include materials developed by third parties.
-For license and attribution notices for these materials, please refer to the LICENSE file.
+```
+   _  __                __
+  | |/ /___ _____ ___  / /___ _
+  |   / __ `/ __ `__ \/ / __ `/
+ /   / /_/ / / / / / / / /_/ /
+/_/|_\__,_/_/ /_/ /_/_/\__,_/
 
-For more information on Rosvita, visit
-  http://xamla.com/en/
+Xamla Autocalibration v1.1
+```
+
+This package containts scripts for camera and hand-eye calibration 
+and is completely written in LUA.
+It is part of [Rosvita](http://www.rosvita.com/) and fully supported by the Xamla team.
+
 
 #### Major features are:
 
