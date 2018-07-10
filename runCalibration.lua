@@ -299,11 +299,15 @@ local function handEye()
 
     if configuration.cameras[configuration.left_camera_id] ~= nil then
       if configuration.cameras[configuration.left_camera_id].serial == serial then
+        print("This is the left camera!")
+        prompt:anyKey()
         left_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.left_camera_id].serial)
       end
     end
     if configuration.cameras[configuration.right_camera_id] ~= nil then
       if configuration.cameras[configuration.right_camera_id].serial == serial then
+        print("This is the right camera!")
+        prompt:anyKey()
         right_cam_data = generateCurrentCapturedImageLog(configuration.cameras[configuration.right_camera_id].serial)
       end
     end

@@ -443,8 +443,20 @@ function HandEye:detectPattern()
   local left_img
   local right_img
   local img
+  local which
   if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
-    if left_camera_config ~= nil then
+    if left_camera_config ~= nil and right_camera_config ~= nil then
+      print("Which camera has been used for hand-eye/pattern calibration?")
+      print("Please again choose 1 or 2. Then press 'Enter'")
+      print("1: left camera: "..left_camera_config.serial)
+      print("2: right camera: "..right_camera_config.serial)
+      which = io.read("*n")
+      if which == 1 then
+        img = self:captureImageNoWait(left_camera_config)
+      elseif which == 2 then
+        img = self:captureImageNoWait(right_camera_config)
+      end
+    elseif left_camera_config ~= nil then
       img = self:captureImageNoWait(left_camera_config)
     elseif right_camera_config ~= nil then
       img = self:captureImageNoWait(right_camera_config)
@@ -538,9 +550,21 @@ function HandEye:movePattern()
   local left_img
   local right_img
   local img
+  local which
   if not offline then
     if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
-      if left_camera_config ~= nil then
+      if left_camera_config ~= nil and right_camera_config ~= nil then
+        print("Which camera has been used for hand-eye/pattern calibration?")
+        print("Please choose 1 or 2. Then press 'Enter'")
+        print("1: left camera: "..left_camera_config.serial)
+        print("2: right camera: "..right_camera_config.serial)
+        which = io.read("*n")
+        if which == 1 then
+          img = self:captureImageNoWait(left_camera_config)
+        elseif which == 2 then
+          img = self:captureImageNoWait(right_camera_config)
+        end
+      elseif left_camera_config ~= nil then
         img = self:captureImageNoWait(left_camera_config)
       elseif right_camera_config ~= nil then
         img = self:captureImageNoWait(right_camera_config)
@@ -555,7 +579,18 @@ function HandEye:movePattern()
     nr = #self.configuration.capture_poses
     if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
       local img_path
-      if left_camera_config ~= nil then
+      if left_camera_config ~= nil and right_camera_config ~= nil then
+        print("Which camera has been used for hand-eye/pattern calibration?")
+        print("Please choose 1 or 2. Then press 'Enter'")
+        print("1: left camera: "..left_camera_config.serial)
+        print("2: right camera: "..right_camera_config.serial)
+        which = io.read("*n")
+        if which == 1 then
+          img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+        elseif which == 2 then
+          img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+        end
+      elseif left_camera_config ~= nil then
         img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
       elseif right_camera_config ~= nil then
         img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
@@ -753,9 +788,21 @@ function HandEye:evaluateCalibrationComplex()
   local left_img
   local right_img
   local img
+  local which
   if not offline then
     if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
-      if left_camera_config ~= nil then
+      if left_camera_config ~= nil and right_camera_config ~= nil then
+        print("Which camera has been used for hand-eye/pattern calibration?")
+        print("Please choose 1 or 2. Then press 'Enter'")
+        print("1: left camera: "..left_camera_config.serial)
+        print("2: right camera: "..right_camera_config.serial)
+        which = io.read("*n")
+        if which == 1 then
+          img = self:captureImageNoWait(left_camera_config)
+        elseif which == 2 then
+          img = self:captureImageNoWait(right_camera_config)
+        end
+      elseif left_camera_config ~= nil then
         img = self:captureImageNoWait(left_camera_config)
       elseif right_camera_config ~= nil then
         img = self:captureImageNoWait(right_camera_config)
@@ -770,7 +817,18 @@ function HandEye:evaluateCalibrationComplex()
     nr = #self.configuration.capture_poses
     if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
       local img_path
-      if left_camera_config ~= nil then
+      if left_camera_config ~= nil and right_camera_config ~= nil then
+        print("Which camera has been used for hand-eye/pattern calibration?")
+        print("Please choose 1 or 2. Then press 'Enter'")
+        print("1: left camera: "..left_camera_config.serial)
+        print("2: right camera: "..right_camera_config.serial)
+        which = io.read("*n")
+        if which == 1 then
+          img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
+        elseif which == 2 then
+          img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
+        end
+      elseif left_camera_config ~= nil then
         img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
       elseif right_camera_config ~= nil then
         img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
@@ -807,13 +865,14 @@ function HandEye:evaluateCalibrationComplex()
     if cameraPatternTrafo_old == nil then
       print('pattern not found!')
       return false, cameraPatternTrafo_old
+    end
   end
   if self.configuration.camera_location_mode == 'extern' then
     cameraPatternTrafo_old = torch.inverse(cameraPatternTrafo_old)
   end
   print("old camera<->pattern trafo:")
   print(cameraPatternTrafo_old)
-
+  
   -- 3. for each evaluation pose predict the corresponding camera<->pattern trafo
   --    and compare it with the measured camera<->pattern trafo after movement
   local end_effector = self.move_group:getEndEffector(self.tcp_end_effector_name)
@@ -850,7 +909,13 @@ function HandEye:evaluateCalibrationComplex()
     local ok = false
     local detection = nil
     if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
-      if left_camera_config ~= nil then
+      if left_camera_config ~= nil and right_camera_config ~= nil then
+        if which == 1 then
+          img = self:captureImageNoWait(left_camera_config)
+        elseif which == 2 then
+          img = self:captureImageNoWait(right_camera_config)
+        end
+      elseif left_camera_config ~= nil then
         img = self:captureImageNoWait(left_camera_config)
       elseif right_camera_config ~= nil then
         img = self:captureImageNoWait(right_camera_config)
@@ -906,6 +971,7 @@ function HandEye:evaluateCalibrationComplex()
       end
     end
   end
+  
   err_t_avg = err_t_avg / count
   err_t_axes_avg = err_t_axes_avg / count
   err_r1_avg = err_r1_avg / count
