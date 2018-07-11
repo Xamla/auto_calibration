@@ -65,16 +65,13 @@ In more detail, the **calibration pipeline** is as follows:
     * b (Hand-eye calibration)
     * e (Evaluate calibration)
   * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
-  * **Note**: At the moment, hande-eye calibration only works with stereo camera setups.
   * **Note**: For all calibration processes one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (**Patterns_with_ID.pdf**) is required.
   
 ### Hand eye calibration
 
-In case of an **onboard camera setup**, the hand-eye calibration detects the transformation (rotation and translation) between the tool center point (tcp) of the robot and a previously calibrated stereo camera system mounted on the robot.
+In case of an **onboard camera setup**, the hand-eye calibration detects the transformation (rotation and translation) between the tool center point (tcp) of the robot and a previously calibrated camera system mounted on the robot.
 
 In case of an **extern camera setup**, the calibration pattern has to be mounted on the robot (e.g. grasped by the gripper) and the hand-eye calibration detects the transformation between the tcp and the pattern.
-
-**Note**: At the moment, the hand-eye calibration **requires a stereo camera setup**. Addition of a version working with a single camera, will be added soon.
 
 To be able to perform hand-eye calibration, the camera calibration has to be performed and saved first (see above). <br />
 To run the hand-eye calibration, type the following commands into the Rosvita terminal:
