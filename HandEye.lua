@@ -22,9 +22,6 @@
 -- Hand-Pattern or Hand-Eye calibration, depending on if we have an 
 -- extern or an onboard camera setup.
 -- Tested with UR5 and SDA10D.
--- Current limitations:
---  * Currently only working with stereo camera setup 
---    -> will be extended to single camera setup soon..
 
 --package.path = package.path .. ";../../lua/auto_calibration/?.lua"
 --package.path = package.path .. ";/home/xamla/Rosvita.Control/lua/auto_calibration/?.lua"
