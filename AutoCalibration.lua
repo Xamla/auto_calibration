@@ -47,6 +47,8 @@ local function tryRequire(module_name)
 end
 
 local slstudio = tryRequire('slstudio')
+local xml = tryRequire('xml')  -- for exporting the .t7 calibration file to .xml
+
 
 local function readKeySpinning()
     local function spin()
@@ -1071,9 +1073,160 @@ function AutoCalibration:saveCalibration()
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 
+    -- export in the format of SLstudio
+    self:exportStereot7AsXmlFiles(calibration_file_path)
+
     return true
 
   end
 
   return false
+end
+
+
+function AutoCalibration:concat(rows, cols, tensor)
+  s = ""
+  for r=1,rows do
+    for c=1,cols do
+      s = s .. tensor[r][c]
+      if (r*c ~= rows*cols) then
+        s = s .. " "
+      end
+    end
+  end
+  return s
+end
+
+function AutoCalibration:exportStereot7AsXmlFiles(path_stereo_calib)
+
+  local output_directory = self.output_directory
+
+  print('Reading calibration file ',path_stereo_calib)
+  calib = torch.load(path_stereo_calib)
+  print(calib)
+
+  leftCam = {xml='opencv_storage',
+    {xml = 'Kc', type_id = "opencv-matrix",
+      {xml = 'rows', '3'},
+      {xml = 'cols', '3'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(3, 3, calib.camLeftMatrix)},
+    },
+    {xml = 'kc', type_id = "opencv-matrix",
+      {xml = 'rows', '5'},
+      {xml = 'cols', '1'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(1, 5, calib.camLeftDistCoeffs)},
+    },
+  }
+
+  rightCam = {xml='opencv_storage',
+    {xml = 'Kc', type_id = "opencv-matrix",
+      {xml = 'rows', '3'},
+      {xml = 'cols', '3'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(3, 3, calib.camRightMatrix)},
+    },
+    {xml = 'kc', type_id = "opencv-matrix",
+      {xml = 'rows', '5'},
+      {xml = 'cols', '1'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(1, 5, calib.camRightDistCoeffs)},
+    },
+  }
+
+  funMatrix = {xml='opencv_storage',
+    {xml = 'F', type_id = "opencv-matrix",
+      {xml = 'rows', '3'},
+      {xml = 'cols', '3'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(3, 3, calib.F)},
+    },
+    {xml = 'R', type_id = "opencv-matrix",
+      {xml = 'rows', '3'},
+      {xml = 'cols', '3'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(3, 3, calib.R)},
+    },
+    {xml = 'T', type_id = "opencv-matrix",
+      {xml = 'rows', '3'},
+      {xml = 'cols', '1'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(3, 1, calib.T)},
+    },
+    {xml = 'Left_Kc', type_id = "opencv-matrix",
+      {xml = 'rows', '3'},
+      {xml = 'cols', '3'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(3, 3, calib.camLeftMatrix)},
+    },
+    {xml = 'Left_kc', type_id = "opencv-matrix",
+      {xml = 'rows', '5'},
+      {xml = 'cols', '1'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(1, 5, calib.camLeftDistCoeffs)},
+    },
+    {xml = 'Right_Kc', type_id = "opencv-matrix",
+      {xml = 'rows', '3'},
+      {xml = 'cols', '3'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(3, 3, calib.camRightMatrix)},
+    },
+    {xml = 'Right_kc', type_id = "opencv-matrix",
+      {xml = 'rows', '5'},
+      {xml = 'cols', '1'},
+      {xml = 'dt', 'f'},
+      {xml = 'data', self:concat(1, 5, calib.camRightDistCoeffs)},
+    },
+    {xml = 'FrameWidth', calib.imWidth},
+    {xml = 'FrameHeight', calib.imHeight},
+  }
+
+  print("")
+  print("LEFT CAMERA:")
+  s,_ = xml.dump(leftCam):gsub("'", '"')
+  print(s)
+  local fn = path.join(output_directory, 'LeftCameraIntrinsics.xml')
+  local file = io.open(fn, "w")
+  file:write('<?xml version="1.0"?>\n')
+  file:write(s)
+  file:close()
+  -- create a symbolic link
+  local current_output_path = path.join(self.current_path, 'LeftCameraIntrinsics.xml')
+  os.execute('rm ' .. current_output_path)
+  local link_target = path.join('..', self.calibration_folder_name, 'LeftCameraIntrinsics.xml')
+  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+
+  print("")
+  print("RIGHT CAMERA:")
+  s,_ = xml.dump(rightCam):gsub("'", '"')
+  print(s)
+  fn = path.join(output_directory, 'RightCameraIntrinsics.xml')
+  file = io.open(fn, "w")
+  file:write('<?xml version="1.0"?>\n')
+  file:write(s)
+  file:close()
+  -- create a symbolic link
+  current_output_path = path.join(self.current_path, 'RightCameraIntrinsics.xml')
+  os.execute('rm ' .. current_output_path)
+  local link_target = path.join('..', self.calibration_folder_name, 'RightCameraIntrinsics.xml')
+  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+
+  print("")
+  print("FUN MATRIX:")
+  s,_ = xml.dump(funMatrix):gsub("'", '"')
+  print(s)
+  fn = path.join(output_directory, 'StereoCalibration.xml')
+  file = io.open(fn, "w")
+  file:write('<?xml version="1.0"?>\n')
+  file:write(s)
+  file:close()
+  -- create a symbolic link
+  current_output_path = path.join(self.current_path, 'StereoCalibration.xml')
+  os.execute('rm ' .. current_output_path)
+  local link_target = path.join('..', self.calibration_folder_name, 'StereoCalibration.xml')
+  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 end
