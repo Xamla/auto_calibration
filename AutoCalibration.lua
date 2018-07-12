@@ -1074,7 +1074,9 @@ function AutoCalibration:saveCalibration()
     printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 
     -- export in the format of SLstudio
-    self:exportStereot7AsXmlFiles(calibration_file_path)
+    if xml ~= nil then
+      self:exportStereot7AsXmlFiles(calibration_file_path)
+    end
 
     return true
 
