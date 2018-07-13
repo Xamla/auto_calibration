@@ -12,7 +12,7 @@
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-  
+
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -29,7 +29,7 @@ local CalibrationMode = ac.CalibrationMode
 local BASE_POSE_NAMES = ac.BASE_POSE_NAMES
 
 require 'ximea.ros.XimeaClient'
-
+local GenICamClient = ac.GenICamCameraClient
 
 local offline = true  -- in case we are reading images from files and not really connecting to the driver set offline to true
 
@@ -295,7 +295,7 @@ local function handEye()
       print('No camera selected!')
       serial = prompt:chooseFromList(ids, 'Available cameras:')
     end
-    print('selected camera:', serial)    
+    print('selected camera:', serial)
 
     if configuration.cameras[configuration.left_camera_id] ~= nil then
       if configuration.cameras[configuration.left_camera_id].serial == serial then
@@ -368,6 +368,10 @@ local function runFullCycle(wait)
 
 end
 
+local function publishHandEye()
+  prompt:printTitle('Publish Hand Eye matrix to rosvita')
+  hand_eye:publishHandEye()
+end
 
 local function evaluateCalibrationSimple()
   prompt:printTitle('Evaluate calibration by only one movement')
@@ -397,12 +401,12 @@ local function menuEvaluateCalibration()
   {
     { 's', 'Evaluate calibration simple', evaluateCalibrationSimple },
     { 'c', 'Evaluate calibration complex', evaluateCalibrationComplex },
+    { 'p', 'Publish HandEye matrix to rosvita worldview', publishHandEye },
     { 'ESC', 'Quit', false },
   }
   prompt:showMenu('Evaluate Calibration Menu', menu_options)
 
 end
-
 
 local function showMainMenu()
   local menu_options =
@@ -516,20 +520,24 @@ local function main(nh)
   cmd:text()
   cmd:option('-cfg', 'configuration.t7', 'configuration input filename')
   cmd:option('-scan', false, 'specify to enable structured light scanning')
+  cmd:option('-offline', false, 'set for offline mode')
 
   local opt = cmd:parse(arg)
   local filename = opt.cfg
-
+  offline = opt.offline
   configuration = torch.load(filename)
 
   camera_client = {}
   -- in case we are reading images from files and not really connecting to the driver set offline to true
   if not offline then
+    print("online mode")
     if configuration.camera_type == 'ximea' then
       camera_client = XimeaClient(nh, 'ximea_mono', false, false)
     elseif configuration.camera_type == 'genicam' then
       camera_client = GenICamClient(nh, 'genicam_mono', false, false)
     end
+  else
+    print("offline mode")
   end
 
   if not validateConfiguration() then
@@ -546,7 +554,7 @@ local function main(nh)
 
   auto_calibration = ac.AutoCalibration(configuration, move_group, camera_client)
   hand_eye = HandEye.new(configuration, auto_calibration.calibration_folder_name, move_group, motion_service, camera_client, auto_calibration.gripper, xamla_mg)
-  
+
   local p = io.popen("pwd")
   local start_path = p:read("*l")
   p:close()
@@ -560,12 +568,14 @@ local function main(nh)
     print('= th ../../lua/auto_calibration/runCalibration.lua -cfg <your_config_file>        =')
     print('===================================================================================')
   end
-  
+
   showMainMenu()
 
   -- shutdown system
   if not offline then
-    camera_client:shutdown()
+    if camera_client then
+      camera_client:shutdown()
+    end
   end
 end
 

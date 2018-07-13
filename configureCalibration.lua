@@ -30,10 +30,10 @@ local CalibrationFlags = ac.CalibrationFlags
 local BASE_POSE_NAMES = ac.BASE_POSE_NAMES
 
 require 'ximea.ros.XimeaClient'
-
+local GenICamClient = ac.GenICamCameraClient
 
 local GET_CONNECTED_XIMEA_DEVICES_SERVICE_NAME = '/ximea_mono/get_connected_devices'
-local GET_CONNECTED_GENICAM_DEVICES_SERVICE_NAME = 'camera_aravis_node/getconnecteddevices'
+local GET_CONNECTED_GENICAM_DEVICES_SERVICE_NAME = '/camera_aravis_node/get_connected_devices'
 local DEFAULT_CAMERA_ID = 'left'
 local DEFAULT_EXPOSURE = 120000
 local DEFAULT_SLEEP_BEFORE_CAPTURE = 1.0
@@ -183,6 +183,7 @@ local function queryCameraSerials(nh)
     local response = getConnectedDevices:call()
     getConnectedDevices:shutdown()
     if response == nil then
+      print('could not reach GENICAM')
       return {}
     end
     return response.serials

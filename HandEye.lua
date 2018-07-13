@@ -12,14 +12,14 @@
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-  
+
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 --]]
 
 
--- Hand-Pattern or Hand-Eye calibration, depending on if we have an 
+-- Hand-Pattern or Hand-Eye calibration, depending on if we have an
 -- extern or an onboard camera setup.
 -- Tested with UR5 and SDA10D.
 
@@ -29,6 +29,7 @@
 local motionLibrary = require 'xamlamoveit.motionLibrary'
 local xutils = require 'xamlamoveit.xutils'
 local datatypes = require 'xamlamoveit.datatypes'
+local rosvita = require 'xamlamoveit.rosvita'
 
 local cv = require "cv"
 require "cv.highgui"
@@ -78,6 +79,7 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
   self.camera_client = camera_client
   self.xamla_mg = xamla_mg
   self.motion_service = motion_service
+  self.world_view_client = rosvita.WorldViewClient.new(motion_service.node_handle)
 
   self.move_groups = self.motion_service:getMoveGroup()  -- If no name is specified first move group is used (and this is linked to all endeffectors)
   self.rc = self:getEndEffectors(self.move_groups) -- gets all endeffectors of the first move group
@@ -98,7 +100,7 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
 
   local left_camera = self.configuration.cameras[self.configuration.left_camera_id]
   local right_camera = self.configuration.cameras[self.configuration.right_camera_id]
-  
+
   local mode = self.configuration.calibration_mode
   if mode == CalibrationMode.SingleCamera then
     -- assemble the calibration file name based on the serial of the camera
@@ -275,7 +277,7 @@ function HandEye:calibrate(imgData)
   if imgDataLeft == nil then
     imgDataSingle = imgDataRight
   end
-  
+
   local Hg = {}
   local Hc = {}
 
@@ -431,7 +433,7 @@ function HandEye:calibrate(imgData)
 end
 
 
--- captures a camera image, or in case of 'StereoRig' mode a pair of stereo images 
+-- captures a camera image, or in case of 'StereoRig' mode a pair of stereo images
 -- detects the camera<->pattern transformation
 function HandEye:detectPattern()
   --1. capture pair of images
@@ -515,7 +517,7 @@ function HandEye:generateRelativeTranslation(O)
 end
 
 
--- captures a camera image, or in case of 'StereoRig' mode a pair of stereo images 
+-- captures a camera image, or in case of 'StereoRig' mode a pair of stereo images
 -- detects the camera<->pattern transformation
 -- predicts the camera<->pattern transformation for the case of a robot motion
 -- performs the robot motion
@@ -646,7 +648,7 @@ function HandEye:movePattern()
       local transf = tf.Transform.new()
       transf:fromTensor(pose_tcp_in_base_coord)
       print("transf:")
-      print(transf)   
+      print(transf)
       local datatypes_pose_tcp = datatypes.Pose()
       datatypes_pose_tcp:setTranslation(pose_tcp_in_base_coord[{{1,3},4}])
       datatypes_pose_tcp:setRotation(transf:getRotation())
@@ -669,7 +671,7 @@ function HandEye:movePattern()
       print(self.predicted_cameraPatternTrafo)
       print('compare with the next pattern detection:')
       local pose_tcp = self.H_pattern_to_tcp * (relative_transformation * torch.inverse(self.H_pattern_to_tcp))
-      local current_pose_tcp = self.move_group:getCurrentPose()     
+      local current_pose_tcp = self.move_group:getCurrentPose()
       local pose_tcp_in_base_coord = current_pose_tcp:toTensor() * pose_tcp
       local transf = tf.Transform.new()
       transf:fromTensor(pose_tcp_in_base_coord)
@@ -747,10 +749,34 @@ function HandEye:evaluateCalibration()
 end
 
 
+function HandEye:publishHandEye()
+  local files_path = self.current_path
+  if self.configuration.camera_location_mode == 'onboard' then
+    if self.H_camera_to_tcp == nil then
+      self.H_camera_to_tcp = torch.load(files_path .. "/HandEye.t7")
+      if self.H_camera_to_tcp == nil then
+        print("could not find HandEye.t7")
+        return
+      end
+    end
+    print(self.H_camera_to_tcp)
+    local hand_eye_pose = datatypes.Pose()
+    hand_eye_pose.stampedTransform:fromTensor(self.H_camera_to_tcp)
+    hand_eye_pose:setFrame(self.tcp_frame_of_reference)
+    local ok, error = self.world_view_client:addPose("HandEye",'', hand_eye_pose)
+    if not ok then
+      ok, error = self.world_view_client:updatePose("HandEye", '', hand_eye_pose)
+      if not ok then
+        print(error)
+      end
+    end
+  end
+end
+
 -- Evaluation of the hand eye calibration (with several robot movements)
 -- Details:
 -- For several, previously taught evaluation poses (i.e. joint configurations)
--- the corresponding tcp poses are calculated via forward kinematic and 
+-- the corresponding tcp poses are calculated via forward kinematic and
 -- the new camera<->pattern trafo is predicted for each of these poses.
 -- After that the robot moves are actually performed and the new camera<->pattern trafos
 -- are measured via plane fit (for stereo setup) or solvePnP (for single camera setup)
@@ -869,7 +895,7 @@ function HandEye:evaluateCalibrationComplex()
   end
   print("old camera<->pattern trafo:")
   print(cameraPatternTrafo_old)
-  
+
   -- 3. for each evaluation pose predict the corresponding camera<->pattern trafo
   --    and compare it with the measured camera<->pattern trafo after movement
   local end_effector = self.move_group:getEndEffector(self.tcp_end_effector_name)
@@ -968,7 +994,7 @@ function HandEye:evaluateCalibrationComplex()
       end
     end
   end
-  
+
   err_t_avg = err_t_avg / count
   err_t_axes_avg = err_t_axes_avg / count
   err_r1_avg = err_r1_avg / count

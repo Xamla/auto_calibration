@@ -31,8 +31,8 @@ function GenICamCameraClient:__init(nodeHandle, mode, permute_channels, rgb_conv
   nodeHandle = nodeHandle or ros.NodeHandle()
 
   self.mode = mode or "genicam_stereo"
-  local captureServiceName = 'camera_aravis_node/capture'
-  local sendCommandServiceName = 'camera_aravis_node/sendcommand'
+  local captureServiceName = '/camera_aravis_node/capture'
+  local sendCommandServiceName = '/camera_aravis_node/send_command'
 
   self.captureClient = nodeHandle:serviceClient(captureServiceName, ros.SrvSpec('camera_aravis/Capture'), persistent)
   self.sendCommandClient = nodeHandle:serviceClient(sendCommandServiceName, ros.SrvSpec('camera_aravis/SendCommand'), persistent)
@@ -47,11 +47,11 @@ function GenICamCameraClient:__init(nodeHandle, mode, permute_channels, rgb_conv
   -- check if services are valid (e.g. persistent services might require reconnect when service initially was not available)
   if not self.captureClient:isValid() then
     self.captureClient:shutdown()
-    self.captureClient = nodeHandle:serviceClient(captureServiceName, ros.SrvSpec('camera_aravis_node/capture'), persistent)
+    self.captureClient = nodeHandle:serviceClient(captureServiceName, ros.SrvSpec('camera_aravis/Capture'), persistent)
   end
   if not self.sendCommandClient:isValid() then
     self.sendCommandClient:shutdown()
-    self.sendCommandClient = nodeHandle:serviceClient(sendCommandServiceName, ros.SrvSpec('camera_aravis_node/sendcommand'), persistent)
+    self.sendCommandClient = nodeHandle:serviceClient(sendCommandServiceName, ros.SrvSpec('camera_aravis/SendCommand'), persistent)
   end
 
   assert(self.captureClient:isValid() and self.sendCommandClient:isValid())
@@ -115,7 +115,10 @@ end
 
 
 function GenICamCameraClient:setExposure(exposure_micro_sec, serials)
-  sendCommand(self, "setExposure", exposure_micro_sec, serials)
+  if type(serials) == 'string' then
+    serials = { serials }
+  end
+  sendCommand(self, "setExposure", exposure_micro_sec, serials or {})
 end
 
 
@@ -137,9 +140,11 @@ end
 
 function GenICamCameraClient:getImages(serials)
   local response = nil
-  while not response do
+  while response == nil do
     response = self:capture(serials)
   end
+  assert(#response.images>0, "get images failed")
   return msg2image(self, response.images[1]), msg2image(self, response.images[2]), msg2image(self, response.images[3]), response.serials
 end
 
+return GenICamCameraClient
