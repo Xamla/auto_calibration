@@ -369,33 +369,58 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
     cv.remap {src = imgRight, map1 = mapAImgRight, map2 = mapBImgRight, interpolation = cv.INTER_NEAREST}
 
   -- Detect all circle points of the pattern in the left/right image
-  local circleFinderParams = self.circleFinderParams
-  local blobDetector = cv.SimpleBlobDetector {circleFinderParams}
-  local keypointsLeft = blobDetector:detect {image = imgLeftRectUndist}
-  local keypointsRight = blobDetector:detect {image = imgRightRectUndist}
-  print(string.format("keypointsLeft.size: %d", keypointsLeft.size))
-  print(string.format("keypointsRight.size: %d", keypointsRight.size))
-
-  -- Draw keypoints
-  local imgKeypointsLeft = imgLeftRectUndist:clone()
-  local imgKeypointsRight = imgRightRectUndist:clone()
-  cv.drawKeypoints {imgLeftRectUndist, keypointsLeft, imgKeypointsLeft}
-  cv.drawKeypoints {imgRightRectUndist, keypointsRight, imgKeypointsRight}
-
-  local ok1, circlesGridPointsLeft =
-    cv.findCirclesGrid {
-    image = imgLeftRectUndist,
-    patternSize = {height = self.pattern.height, width = self.pattern.width},
-    flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
-    blobDetector = blobDetector
-  }
-  local ok2, circlesGridPointsRight =
-    cv.findCirclesGrid {
-    image = imgRightRectUndist,
-    patternSize = {height = self.pattern.height, width = self.pattern.width},
-    flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
-    blobDetector = blobDetector
-  }
+  -- (see "AutoCalibration.lua", function "extractPoints")
+  --------------------------------------------------------------------
+  print("Searching calibration target.")
+  local ok1, ok2 = false, false
+  local circlesGridPointsLeft
+  local circlesGridPointsRight
+  -- Searching calibration target in left camera image:
+  if imgLeftRectUndist:size(3) > 1 then
+    -- extract green channel (e.g. of color cams with RGB Bayer Matrix)
+    local greenImgLeft = imgLeftRectUndist[{{},{},2}]:clone()
+    imgLeftRectUndist = greenImgLeft
+  end
+  local foundMarkersLeft = self:processImg(imgLeftRectUndist) -- if too many circle points are found, point clusters are detected in each of which is searched for the pattern
+  if next(foundMarkersLeft) ~= nil then
+    circlesGridPointsLeft = foundMarkersLeft[1].points
+    ok1 = true
+  else
+    print('[Warning] Trying fallback with standard findCirclesGrid() function...')
+    local ok, points = cv.findCirclesGrid { image = imgLeftRectUndist,
+                                            patternSize = { height = self.pattern.height, width = self.pattern.width },
+                                            flags = cv.CALIB_CB_ASYMMETRIC_GRID
+                                          }
+    if ok then
+      circlesGridPointsLeft = points
+      ok1 = true
+    else
+      print("[Warning] Pattern not found in left image")
+    end
+  end
+  -- Searching calibration target in right camera image:
+  if imgRightRectUndist:size(3) > 1 then
+    -- extract green channel (e.g. of color cams with RGB Bayer Matrix)
+    local greenImgRight = imgRightRectUndist[{{},{},2}]:clone()
+    imgRightRectUndist = greenImgRight
+  end
+  local foundMarkersRight = self:processImg(imgRightRectUndist) -- if too many circle points are found, point clusters are detected in each of which is searched for the pattern
+  if next(foundMarkersRight) ~= nil then
+    circlesGridPointsRight = foundMarkersRight[1].points
+    ok2 = true
+  else
+    print('[Warning] Trying fallback with standard findCirclesGrid() function...')
+    local ok, points = cv.findCirclesGrid { image = imgRightRectUndist,
+                                            patternSize = { height = self.pattern.height, width = self.pattern.width },
+                                            flags = cv.CALIB_CB_ASYMMETRIC_GRID
+                                          }
+    if ok then
+      circlesGridPointsRight = points
+      ok2 = true
+    else
+      print("[Warning] Pattern not found in right image")
+    end
+  end
   print(string.format("ok1: %s", ok1))
   print(string.format("ok2: %s\n", ok2))
 
