@@ -48,20 +48,9 @@ require 'ximea.ros.XimeaClient'
 local ros = require 'ros'
 local tf = ros.tf
 
-local function tryRequire(module_name)
-  local ok, val = pcall(function() return require(module_name) end)
-  if ok then
-    return val
-  else
-    return nil
-  end
-end
-local slstudio = tryRequire('slstudio')
-
 local offline = false -- in case we are reading images from files and not really connecting to the driver set offline to true
 local M_PI = 3.14159265359
 --local handEye = {}
-
 
 local autocal = require 'auto_calibration.env'
 local CalibrationMode = autocal.CalibrationMode

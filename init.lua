@@ -13,8 +13,7 @@ auto_calibration.BASE_POSE_NAMES = BASE_POSE_NAMES
 
 local CalibrationMode = {
   SingleCamera = 'SingleCamera',
-  StereoRig = 'StereoRig',
-  StructuredLightSingleCamera = 'StructuredLightSingleCamera',
+  StereoRig = 'StereoRig'
 }
 auto_calibration.CalibrationMode = CalibrationMode
 

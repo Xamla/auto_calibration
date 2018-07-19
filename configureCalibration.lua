@@ -579,7 +579,6 @@ local function selectCalibrationMode()
   {
     { '1', 'Single camera calibration', function() setCalibrationMode(CalibrationMode.SingleCamera) return false end },
     { '2', 'Stereo rig calibraiton', function() setCalibrationMode(CalibrationMode.StereoRig) return false end },
-    { '3', 'Structured light single camera calibration', function() setCalibrationMode(CalibrationMode.StructuredLightSingleCamera) return false end },
     { 'ESC', 'Return to main menu', false },
   }
   prompt:showMenu('Main Menu', menu_options)

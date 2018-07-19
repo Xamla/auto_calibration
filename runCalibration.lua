@@ -207,7 +207,6 @@ local function calibrateCamera(wait)
   local mode = configuration.calibration_mode
 
   if mode == CalibrationMode.SingleCamera then
-
     -- still need to ask which camera, there need not only be one
     --local ok = selectCalibrationFolder()
     serial = selectCamera()
@@ -218,7 +217,6 @@ local function calibrateCamera(wait)
     else
       print('Calibration failed.')
     end
-
   elseif mode == CalibrationMode.StereoRig then
     local ok = auto_calibration:stereoCalibration()
     if ok then
@@ -227,12 +225,8 @@ local function calibrateCamera(wait)
     else
       print('Stereo calibration failed.')
     end
-
-  elseif mode == CalibrationMode.StructuredLightSingleCamera then
-    print("-- START CALIB")
-    auto_calibration:monoStructuredLightCalibration()
-
   end
+
   if wait ~= false then
     prompt:anyKey()
   end
@@ -283,7 +277,7 @@ local function handEye()
   local left_cam_data = nil
   local right_cam_data = nil
   local mode = configuration.calibration_mode
-  if mode == CalibrationMode.SingleCamera or mode == CalibrationMode.StructuredLightSingleCamera then
+  if mode == CalibrationMode.SingleCamera then
     -- still need to ask which camera, there need not only be one
     ids = {}
     for cam_index, serial in pairs(configuration.cameras) do
@@ -467,7 +461,7 @@ local function validateConfiguration()
   end
 
   local mode = configuration.calibration_mode
-  if mode == CalibrationMode.SingleCamera or mode == CalibrationMode.StructuredLightSingleCamera then
+  if mode == CalibrationMode.SingleCamera then
 
     local camera_configuration = cameras[configuration.left_camera_id]
     if camera_configuration == nil then

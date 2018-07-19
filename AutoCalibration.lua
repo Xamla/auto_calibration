@@ -46,7 +46,6 @@ local function tryRequire(module_name)
   end
 end
 
-local slstudio = tryRequire('slstudio')
 local xml = tryRequire('xml')  -- for exporting the .t7 calibration file to .xml
 
 
@@ -182,9 +181,6 @@ function AutoCalibration:shutdown()
     self.gripper:shutdown()
   end
   self.node_handle:shutdown()
-  if slstudio ~= nil then
-    slstudio:closeCalibration()
-  end
 end
 
 
@@ -466,75 +462,27 @@ function AutoCalibration:runCaptureSequence()
 
   local pos_list = configuration.capture_poses
   assert(pos_list ~= nil and #pos_list > 0)
-
   local left_camera = configuration.cameras[configuration.left_camera_id]
   local right_camera = configuration.cameras[configuration.right_camera_id]
-
-  local mode = configuration.calibration_mode
-  if mode == CalibrationMode.StructuredLightSingleCamera then
-    assert(slstudio ~= nil, 'Structured light scanning module could not be loadad.')
-    assert(left_camera ~= nil, "Left camera for SL scanning not correctly configured.")
-
-    local intrinsics
-    local distortion
-
-    -- try to get camera parameters from current configuration
-    local camera_calibration = tryLoadCurrentCameraCalibration(self, left_camera.serial)
-    if camera_calibration ~= nil then
-      print('Using existing camera calibration')
-      intrinsics = camera_calibration.camMatrix:float()
-      distortion = camera_calibration.distCoeffs:float()
-      print('Camera matrix:')
-      print(intrinsics)
-      print('Distortion coefficients:')
-      print(distortion)
-    else
-      printf("No existing camera calibration found for camera '%s'.", left_camera.serial)
-    end
-
-    print('using cam', left_camera)
-    local result = slstudio:initCalibration(
-      left_camera.exposure / 1000,
-      intrinsics,
-      distortion,
-      configuration.checkerboard_pattern_geometry:float(),
-      slstudio.CAMERA_ROS,
-      left_camera.serial,
-      path.join(output_directory, 'sls'),
-      path.join(output_directory, 'newFrames')
-    )
-
-    printf('Structured light initializaton returned: %d', result)
-  end
 
   for i,p in ipairs(pos_list) do
 
     printf('Moving to position #%d...', i)
-
     -- move to capture pose
     moveJ(self, p)
 
-    if mode == CalibrationMode.SingleCamera or mode == CalibrationMode.StereoRig then
+    if left_camera ~= nil then
+      local fn, joint_values, pose = captureImage(self, i, left_camera, output_directory)
+      file_names[#file_names+1] = fn
+      recorded_joint_values[#recorded_joint_values+1] = joint_values
+      recorded_poses[#recorded_poses+1] = pose:toTensor()
+    end
 
-      if left_camera ~= nil then
-        local fn, joint_values, pose = captureImage(self, i, left_camera, output_directory)
-        file_names[#file_names+1] = fn
-        recorded_joint_values[#recorded_joint_values+1] = joint_values
-        recorded_poses[#recorded_poses+1] = pose:toTensor()
-      end
-
-      if right_camera ~= nil then
-        local fn, joint_values, pose = captureImage(self, i, right_camera, output_directory)
-        file_names[#file_names+1] = fn
-        --recorded_joint_values[#recorded_joint_values+1] = joint_values
-        --recorded_poses[#recorded_poses+1] = pose:toTensor()
-      end
-
-    elseif mode == CalibrationMode.StructuredLightSingleCamera then
-
-      local result = slstudio:snapAndVerify()
-      print("RESULT: " .. result)
-
+    if right_camera ~= nil then
+      local fn, joint_values, pose = captureImage(self, i, right_camera, output_directory)
+      file_names[#file_names+1] = fn
+      --recorded_joint_values[#recorded_joint_values+1] = joint_values
+      --recorded_poses[#recorded_poses+1] = pose:toTensor()
     end
 
     collectgarbage()
@@ -638,17 +586,6 @@ local function extractPoints(image_paths, pattern_localizer, pattern_id)
     end
   end
   return found, w, h, not_found_indices
-end
-
-
-function AutoCalibration:monoStructuredLightCalibration()
-  -- calibrate structured light system
-  local calibration_errors = torch.FloatTensor({0, 0, 0})
-  slstudio:calibrate(calibration_errors)
-  print("Calibration erros:")
-  print(calibration_errors)
-  self.calibration_errors = calibration_errors
-  return true
 end
 
 
@@ -1029,26 +966,6 @@ function AutoCalibration:saveCalibration()
 
     return true
 
-  elseif mode == CalibrationMode.StructuredLightSingleCamera then
-
-    if self.calibration_errors == nil then
-      print('No calibration available.')
-      return false
-    end
-
-    local calibration_fn = 'sls.xml'
-    local calibration_file_path = path.join(output_directory, calibration_fn)
-    slstudio:save(calibration_file_path)
-    print('Structured light calibration saved to: ' .. calibration_file_path)
-
-    local current_output_path = path.join(current_output_directory, calibration_fn)
-    os.execute('rm -f ' .. current_output_path)
-    local link_target = path.join('..', calibration_name, calibration_fn)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
-
-    return true
-
   elseif mode == CalibrationMode.StereoRig then
 
     if self.stereo_calibration == nil then
@@ -1073,7 +990,7 @@ function AutoCalibration:saveCalibration()
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 
-    -- export in the format of SLstudio
+    -- export in xml format
     if xml ~= nil then
       self:exportStereot7AsXmlFiles(calibration_file_path)
     end
