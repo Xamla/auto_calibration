@@ -82,16 +82,6 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
   self.world_view_client = rosvita.WorldViewClient.new(motion_service.node_handle)
 
   self.move_groups = self.motion_service:getMoveGroup()  -- If no name is specified first move group is used (and this is linked to all endeffectors)
-  self.rc = self:getEndEffectors(self.move_groups) -- gets all endeffectors of the first move group
-
-  self.right_move_group, self.left_move_group, self.both_move_group, self.xamla_mg_both = nil, nil, nil, nil
-  if self.rc ~= nil then
-    self.right_move_group = self.motion_service:getMoveGroup(self.rc.right_move_group_name)
-    self.left_move_group = self.motion_service:getMoveGroup(self.rc.left_move_group_name)
-    self.both_move_group = self.motion_service:getMoveGroup(self.rc.both_move_group_name)
-    self.xamla_mg_both = motionLibrary.MoveGroup(self.motion_service, self.rc.both_move_group_name) -- motion client
-  end
-
   self.gripper = gripper
   self.calibration_folder_name = calibration_folder_name
 
@@ -174,37 +164,6 @@ function HandEye:getEndEffectorName()
   local tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
   local tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
   return tcp_frame_of_reference,tcp_end_effector_name
-end
-
-
-function HandEye:getEndEffectors(move_groups)
-  local move_group_names, move_group_details = move_groups.motion_service:queryAvailableMoveGroups()
-  local rc = {}
-  if #move_group_names == 1 then -- only one move group (e.g. UR)
-    rc.tcp_frame_of_reference = move_group_details[move_group_names[1]].end_effector_link_names[1]
-    rc.tcp_end_effector_name = move_group_details[move_group_names[1]].end_effector_names[1]
-    rc.move_group_name = move_group_names[1]
-  end
-
-  if #move_group_names >= 6 then -- 6 or more move groups (e.g. SDA)
-    -- the following is special for SDA
-    local index = 5
-    rc.left_tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
-    rc.left_tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
-    rc.left_move_group_name = move_group_names[index]
-
-    index = 6
-    rc.right_tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
-    rc.right_tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
-    rc.right_move_group_name = move_group_names[index]
-
-    index = 1
-    rc.both_tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
-    rc.both_tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
-    rc.both_move_group_name = move_group_names[index]
-  end
-
-  return rc
 end
 
 
