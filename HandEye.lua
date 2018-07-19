@@ -48,7 +48,6 @@ require 'ximea.ros.XimeaClient'
 local ros = require 'ros'
 local tf = ros.tf
 
-local offline = false -- in case we are reading images from files and not really connecting to the driver set offline to true
 local M_PI = 3.14159265359
 --local handEye = {}
 
@@ -498,57 +497,27 @@ function HandEye:movePattern()
   local right_img
   local img
   local which
-  if not offline then
-    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
-      if left_camera_config ~= nil and right_camera_config ~= nil then
-        print("Which camera has been used for hand-eye/pattern calibration?")
-        print("Please choose 1 or 2. Then press 'Enter'")
-        print("1: left camera: "..left_camera_config.serial)
-        print("2: right camera: "..right_camera_config.serial)
-        which = io.read("*n")
-        if which == 1 then
-          img = self:captureImageNoWait(left_camera_config)
-        elseif which == 2 then
-          img = self:captureImageNoWait(right_camera_config)
-        end
-      elseif left_camera_config ~= nil then
+
+  if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+    if left_camera_config ~= nil and right_camera_config ~= nil then
+      print("Which camera has been used for hand-eye/pattern calibration?")
+      print("Please choose 1 or 2. Then press 'Enter'")
+      print("1: left camera: "..left_camera_config.serial)
+      print("2: right camera: "..right_camera_config.serial)
+      which = io.read("*n")
+      if which == 1 then
         img = self:captureImageNoWait(left_camera_config)
-      elseif right_camera_config ~= nil then
+      elseif which == 2 then
         img = self:captureImageNoWait(right_camera_config)
       end
-    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
-      left_img = self:captureImageNoWait(left_camera_config)
-      right_img = self:captureImageNoWait(right_camera_config)
+    elseif left_camera_config ~= nil then
+      img = self:captureImageNoWait(left_camera_config)
+    elseif right_camera_config ~= nil then
+      img = self:captureImageNoWait(right_camera_config)
     end
-  else
-    -- offline (only for testing cases) -> load last captured images
-    local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
-    nr = #self.configuration.capture_poses
-    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
-      local img_path
-      if left_camera_config ~= nil and right_camera_config ~= nil then
-        print("Which camera has been used for hand-eye/pattern calibration?")
-        print("Please choose 1 or 2. Then press 'Enter'")
-        print("1: left camera: "..left_camera_config.serial)
-        print("2: right camera: "..right_camera_config.serial)
-        which = io.read("*n")
-        if which == 1 then
-          img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-        elseif which == 2 then
-          img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-        end
-      elseif left_camera_config ~= nil then
-        img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-      elseif right_camera_config ~= nil then
-        img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-      end
-      img = cv.imread{img_path}
-    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
-      left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-      right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-      left_img = cv.imread{left_img_path}
-      right_img = cv.imread{right_img_path}
-    end
+  elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
+    left_img = self:captureImageNoWait(left_camera_config)
+    right_img = self:captureImageNoWait(right_camera_config)
   end
 
   createPatternLocalizer(self)
@@ -760,57 +729,27 @@ function HandEye:evaluateCalibrationComplex()
   local right_img
   local img
   local which
-  if not offline then
-    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
-      if left_camera_config ~= nil and right_camera_config ~= nil then
-        print("Which camera has been used for hand-eye/pattern calibration?")
-        print("Please choose 1 or 2. Then press 'Enter'")
-        print("1: left camera: "..left_camera_config.serial)
-        print("2: right camera: "..right_camera_config.serial)
-        which = io.read("*n")
-        if which == 1 then
-          img = self:captureImageNoWait(left_camera_config)
-        elseif which == 2 then
-          img = self:captureImageNoWait(right_camera_config)
-        end
-      elseif left_camera_config ~= nil then
+
+  if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
+    if left_camera_config ~= nil and right_camera_config ~= nil then
+      print("Which camera has been used for hand-eye/pattern calibration?")
+      print("Please choose 1 or 2. Then press 'Enter'")
+      print("1: left camera: "..left_camera_config.serial)
+      print("2: right camera: "..right_camera_config.serial)
+      which = io.read("*n")
+      if which == 1 then
         img = self:captureImageNoWait(left_camera_config)
-      elseif right_camera_config ~= nil then
+      elseif which == 2 then
         img = self:captureImageNoWait(right_camera_config)
       end
-    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
-      left_img = self:captureImageNoWait(left_camera_config)
-      right_img = self:captureImageNoWait(right_camera_config)
+    elseif left_camera_config ~= nil then
+      img = self:captureImageNoWait(left_camera_config)
+    elseif right_camera_config ~= nil then
+      img = self:captureImageNoWait(right_camera_config)
     end
-  else
-    -- offline (only for testing cases) -> load last captured images
-    local current_directory_path = path.join(self.configuration.output_directory, 'capture/')
-    nr = #self.configuration.capture_poses
-    if self.configuration.calibration_mode == CalibrationMode.SingleCamera then
-      local img_path
-      if left_camera_config ~= nil and right_camera_config ~= nil then
-        print("Which camera has been used for hand-eye/pattern calibration?")
-        print("Please choose 1 or 2. Then press 'Enter'")
-        print("1: left camera: "..left_camera_config.serial)
-        print("2: right camera: "..right_camera_config.serial)
-        which = io.read("*n")
-        if which == 1 then
-          img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-        elseif which == 2 then
-          img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-        end
-      elseif left_camera_config ~= nil then
-        img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-      elseif right_camera_config ~= nil then
-        img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-      end
-      img = cv.imread{img_path}
-    elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
-      local left_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.left.serial .. string.format('_%03d.png', nr)
-      local right_img_path = current_directory_path .. 'cam_' .. self.configuration.cameras.right.serial .. string.format('_%03d.png', nr)
-      left_img = cv.imread{left_img_path}
-      right_img = cv.imread{right_img_path}
-    end
+  elseif self.configuration.calibration_mode == CalibrationMode.StereoRig then
+    left_img = self:captureImageNoWait(left_camera_config)
+    right_img = self:captureImageNoWait(right_camera_config)
   end
 
   createPatternLocalizer(self)
