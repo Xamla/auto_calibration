@@ -246,8 +246,20 @@ function PatternLocalisation:mirrorPatternPoints(points, patWidth, patHeight, im
 end
 
 
-function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, doDebug, imgShowInput)
+local function findMarker(markerList, markerId)
+  for i,m in ipairs(markerList) do
+    if m.id == markerId then
+      return m
+    end
+  end
+  return nil
+end
+
+
+function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, doDebug, imgShowInput, patternID)
   doDebug = doDebug or false
+  imgShowInput = imgShowInput or nil
+  patternID = patternID or nil
   local camPoseFinal
 
   print("Searching calibration target.")
@@ -260,16 +272,34 @@ function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, d
   end
   local foundMarkers = self:processImg(inputImg) -- if too many circle points are found, point clusters are detected in each of which we search for the pattern
   if next(foundMarkers) ~= nil then
-    points = foundMarkers[1].points
-    found = true
+    if patternID ~= nil then
+      local m = findMarker(foundMarkers, patternID)
+      if m then
+        points = m.points
+        found = true
+      else
+        print(string.format("[Warning] Pattern with ID %d not found", patternID))
+      end
+    else
+      points = foundMarkers[1].points
+      found = true
+    end
   else
     print('[Warning] Trying fallback with standard findCirclesGrid() function...')
     found, points = cv.findCirclesGrid { image = inputImg,
                                          patternSize = { height = self.pattern.height, width = self.pattern.width },
                                          flags = cv.CALIB_CB_ASYMMETRIC_GRID
                                        }
-    if not found then
-      print("[Warning] Pattern not found")
+    if found and patternID ~= nil then
+      local id = self:getPatternId(inputImg, points, self.pattern)
+      if id ~= patternID then
+        print(string.format("[Warning] Pattern with ID %d not found", patternID))
+        found = false
+      end
+    else
+      if not found then
+        print("[Warning] No pattern found")
+      end
     end
   end
 
@@ -318,10 +348,11 @@ function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, d
 end
 
 
-function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam, doDebug, imgShowInput)
+function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam, doDebug, imgShowInput, patternID)
   local whichCam = whichCam or "left"
   local doDebug = doDebug or false
-  local imgShowInput = imgShowInput or false
+  local imgShowInput = imgShowInput or nil
+  local patternID = patternID or nil
   local camPoseFinal
 
   stereoCalib = self.stereoCalibration
@@ -396,19 +427,39 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   end
   local foundMarkersLeft = self:processImg(imgLeftRectUndist) -- if too many circle points are found, point clusters are detected in each of which is searched for the pattern
   if next(foundMarkersLeft) ~= nil then
-    circlesGridPointsLeft = foundMarkersLeft[1].points
-    ok1 = true
+    if patternID ~= nil then
+      local m = findMarker(foundMarkersLeft, patternID)
+      if m then
+        circlesGridPointsLeft = m.points
+        ok1 = true
+      else
+        print(string.format("[Warning] Pattern with ID %d not found in left image", patternID))
+      end
+    else
+      circlesGridPointsLeft = foundMarkersLeft[1].points
+      ok1 = true
+    end
   else
     print('[Warning] Trying fallback with standard findCirclesGrid() function...')
     local ok, points = cv.findCirclesGrid { image = imgLeftRectUndist,
                                             patternSize = { height = self.pattern.height, width = self.pattern.width },
                                             flags = cv.CALIB_CB_ASYMMETRIC_GRID
                                           }
-    if ok then
-      circlesGridPointsLeft = points
-      ok1 = true
+    if ok and patternID ~= nil then
+      local id = self:getPatternId(imgLeftRectUndist, points, self.pattern)
+      if id == patternID then
+        circlesGridPointsLeft = points
+        ok1 = true
+      else
+        print(string.format("[Warning] Pattern with ID %d not found in left image", patternID))
+      end
     else
-      print("[Warning] Pattern not found in left image")
+      if ok then
+        circlesGridPointsLeft = points
+        ok1 = true
+      else
+        print("[Warning] No pattern found in left image")
+      end
     end
   end
   -- Searching calibration target in right camera image:
@@ -419,19 +470,39 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   end
   local foundMarkersRight = self:processImg(imgRightRectUndist) -- if too many circle points are found, point clusters are detected in each of which is searched for the pattern
   if next(foundMarkersRight) ~= nil then
-    circlesGridPointsRight = foundMarkersRight[1].points
-    ok2 = true
+    if patternID ~= nil then
+      local m = findMarker(foundMarkersRight, patternID)
+      if m then
+        circlesGridPointsRight = m.points
+        ok2 = true
+      else
+        print(string.format("[Warning] Pattern with ID %d not found in right image", patternID))
+      end
+    else
+      circlesGridPointsRight = foundMarkersRight[1].points
+      ok2 = true
+    end
   else
     print('[Warning] Trying fallback with standard findCirclesGrid() function...')
     local ok, points = cv.findCirclesGrid { image = imgRightRectUndist,
                                             patternSize = { height = self.pattern.height, width = self.pattern.width },
                                             flags = cv.CALIB_CB_ASYMMETRIC_GRID
                                           }
-    if ok then
-      circlesGridPointsRight = points
-      ok2 = true
+    if ok and patternID ~= nil then
+      local id = self:getPatternId(imgRightRectUndist, points, self.pattern)
+      if id == patternID then
+        circlesGridPointsRight = points
+        ok2 = true
+      else
+        print(string.format("[Warning] Pattern with ID %d not foundin right image", patternID))
+      end
     else
-      print("[Warning] Pattern not found in right image")
+      if ok then
+        circlesGridPointsRight = points
+        ok2 = true
+      else
+        print("[Warning] No pattern found in right image")
+      end
     end
   end
   print(string.format("ok1: %s", ok1))

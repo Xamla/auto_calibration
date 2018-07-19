@@ -246,7 +246,7 @@ function HandEye:calibrate(imgData)
       local imgLeft = cv.imread {fnLeft}
       local imgRight = cv.imread {fnRight}
       local robotPose = imgData.jsposes.recorded_poses[i]
-      local ok, patternPoseRelToCamera = self.pattern_localizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left')
+      local ok, patternPoseRelToCamera = self.pattern_localizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left', false, nil, self.configuration.circle_pattern_id)
       if ok then
         local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
         local cameraPatternTrafo = cameraPoseRelToPattern -- This is used for an extern camera setup.
@@ -264,7 +264,7 @@ function HandEye:calibrate(imgData)
       local fn = imgDataSingle.imagePaths[i]
       local img = cv.imread {fn}
       local robotPose = imgData.jsposes.recorded_poses[i]
-      local patternPoseRelToCamera, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+      local patternPoseRelToCamera, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern, false, nil, self.configuration.circle_pattern_id)
       if patternPoseRelToCamera ~= nil then
         local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
         local cameraPatternTrafo = cameraPoseRelToPattern -- This is used for an extern camera setup.
@@ -428,7 +428,7 @@ function HandEye:detectPattern()
       print("Left and/or right image are \'nil\'.")
       return nil
     end
-    ok, cameraPatternTrafo = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+    ok, cameraPatternTrafo = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left', false, nil, self.configuration.circle_pattern_id)
     if not ok then
       return nil
     end
@@ -437,7 +437,7 @@ function HandEye:detectPattern()
       print("Image is \'nil\'.")
       return false, nil
     end
-    cameraPatternTrafo, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+    cameraPatternTrafo, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern, false, nil, self.configuration.circle_pattern_id)
     if cameraPatternTrafo == nil then
       return nil
     end
@@ -537,7 +537,7 @@ function HandEye:movePattern()
       print("Left and/or right image are \'nil\'.")
       return false, nil
     end
-    ok, cameraPatternTrafo = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+    ok, cameraPatternTrafo = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left', false, nil, self.configuration.circle_pattern_id)
     if not ok then
       print('pattern not found!')
       return ok, cameraPatternTrafo
@@ -547,7 +547,7 @@ function HandEye:movePattern()
       print("Image is \'nil\'.")
       return false, nil
     end
-    cameraPatternTrafo, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+    cameraPatternTrafo, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern, false, nil, self.configuration.circle_pattern_id)
     if cameraPatternTRafo == nil then
       print('pattern not found!')
       return false, cameraPatternTrafo
@@ -769,7 +769,7 @@ function HandEye:evaluateCalibrationComplex()
       print("Left and/or right image are \'nil\'.")
       return
     end
-    ok, cameraPatternTrafo_old = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+    ok, cameraPatternTrafo_old = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left', false, nil, self.configuration.circle_pattern_id)
     if not ok then
       print('pattern not found!')
       return ok, cameraPatternTrafo_old
@@ -779,7 +779,7 @@ function HandEye:evaluateCalibrationComplex()
       print("Image is \'nil\'.")
       return false, nil
     end
-    cameraPatternTrafo_old, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+    cameraPatternTrafo_old, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern, false, nil, self.configuration.circle_pattern_id)
     if cameraPatternTrafo_old == nil then
       print('pattern not found!')
       return false, cameraPatternTrafo_old
@@ -842,7 +842,7 @@ function HandEye:evaluateCalibrationComplex()
         print('Please connect cameras first!')
         return false
       end
-      detection, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern)
+      detection, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern, false, nil, self.configuration.circle_pattern_id)
       if detection == nil then
         print('Pattern not found! Taking the next image..')
       else
@@ -868,7 +868,7 @@ function HandEye:evaluateCalibrationComplex()
         print('Please connect cameras first!')
         return false
       end
-      ok, detection = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left')
+      ok, detection = self.pattern_localizer:calcCamPoseViaPlaneFit(left_img, right_img, 'left', false, nil, self.configuration.circle_pattern_id)
       if not ok then
         print('Pattern not found! Taking the next image..')
       else
