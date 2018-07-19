@@ -117,9 +117,11 @@ function HandEye:loadStereoCalibration(stereo_calib_fn)
     self.rightDistCoeffs =  stereoCalib.camRightDistCoeffs
     self.rightLeftCamTrafo = stereoCalib.trafoLeftToRightCam
     print('read stereo calibration file '..stereo_calib_fn)
+    return true
   else
     print('Calibration file '..stereo_calib_fn..' does not exist.')
     print('Please calibrate cameras first.')
+    return false
   end
 end
 
@@ -132,9 +134,11 @@ function HandEye:loadCalibration(calib_fn)
     self.cameraMatrix = calib.camMatrix
     self.distCoeffs = calib.distCoeffs
     print('read calibration file '..calib_fn)
+    return true
   else
     print('Calibration file '..calib_fn..' does not exist.')
     print('Please calibrate camera first.')
+    return false
   end
 end
 
@@ -200,17 +204,21 @@ function HandEye:calibrate(imgData)
 
   --first load the latest calibration file
   local mode = self.configuration.calibration_mode
+  local success = false
   if mode == CalibrationMode.SingleCamera then
     if imgData.imgDataLeft ~= nil then
       print('HandEye:calibrate loading calibration file: '..self.calibration_path_left)
-      self:loadCalibration(self.calibration_path_left)
+      success = self:loadCalibration(self.calibration_path_left)
     elseif imgData.imgDataRight ~= nil then
       print('HandEye:calibrate loading calibration file: '..self.calibration_path_right)
-      self:loadCalibration(self.calibration_path_right)
+      success = self:loadCalibration(self.calibration_path_right)
     end
   elseif mode == CalibrationMode.StereoRig then
     print('HandEye:calibrate loading calibration file: '..self.stereo_calibration_path)
-    self:loadStereoCalibration(self.stereo_calibration_path)
+    success = self:loadStereoCalibration(self.stereo_calibration_path)
+  end
+  if success == false then
+    return
   end
 
   local output_path = path.join(self.configuration.output_directory, self.calibration_folder_name)

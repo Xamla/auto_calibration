@@ -250,15 +250,28 @@ function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, d
   doDebug = doDebug or false
   local camPoseFinal
 
-  local blobDetector = cv.SimpleBlobDetector {self.circleFinderParams}
-
-  local found, points =
-    cv.findCirclesGrid {
-    image = inputImg,
-    patternSize = {height = patternData.height, width = patternData.width},
-    flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
-    blobDetector = blobDetector
-  }
+  print("Searching calibration target.")
+  local found = false
+  local points
+  if inputImg:size(3) > 1 then
+    -- extract green channel (e.g. of color cams with RGB Bayer Matrix)
+    local greenImgLeft = inputImg[{{},{},2}]:clone()
+    inputImg = greenImgLeft
+  end
+  local foundMarkers = self:processImg(inputImg) -- if too many circle points are found, point clusters are detected in each of which we search for the pattern
+  if next(foundMarkers) ~= nil then
+    points = foundMarkers[1].points
+    found = true
+  else
+    print('[Warning] Trying fallback with standard findCirclesGrid() function...')
+    found, points = cv.findCirclesGrid { image = inputImg,
+                                         patternSize = { height = self.pattern.height, width = self.pattern.width },
+                                         flags = cv.CALIB_CB_ASYMMETRIC_GRID
+                                       }
+    if not found then
+      print("[Warning] Pattern not found")
+    end
+  end
 
   if found then
     local points3d = self:generatePatternPoints(patternData.width, patternData.height, patternData.pointDist)
