@@ -37,6 +37,7 @@ local configuration
 local motion_service
 local auto_calibration
 local hand_eye
+local offline
 
 
 local function moveToStartPose(wait)
@@ -515,14 +516,16 @@ local function main(nh)
 
   local opt = cmd:parse(arg)
   local filename = opt.cfg
-  local offline = false
+  offline = false
+  -- in case we are reading images from files 
+  -- and not really connecting to the driver 
+  -- set offline to true
   if opt.offline == 'true' then
     offline = true
   end
   configuration = torch.load(filename)
 
   camera_client = {}
-  -- in case we are reading images from files and not really connecting to the driver set offline to true
   if not offline then
     print("online mode")
     if configuration.camera_type == 'ximea' then
