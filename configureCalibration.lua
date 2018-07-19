@@ -567,13 +567,6 @@ local function setCalibrationMode(mode)
 end
 
 
-local function setCameraLocation(location)
-  configuration.camera_location_mode = location
-  printf('New camera location mode: %s', configuration.camera_location_mode)
-  prompt:anyKey()
-end
-
-
 local function selectCalibrationMode()
   local menu_options =
   {
@@ -585,6 +578,13 @@ local function selectCalibrationMode()
 end
 
 
+local function setCameraLocation(location)
+  configuration.camera_location_mode = location
+  printf('New camera location mode: %s', configuration.camera_location_mode)
+  prompt:anyKey()
+end
+
+
 local function selectCameraLocation()
   local menu_options =
   {
@@ -592,7 +592,7 @@ local function selectCameraLocation()
     { '2', 'Onboard camera setup', function() setCameraLocation('onboard') return false end },
     { 'ESC', 'Return to main menu', false },
   }
-  prompt:showMenu('Main Menu', menu_options)
+  prompt:showMenu('Edit Camera Location', menu_options)
 end
 
 
@@ -724,7 +724,7 @@ local function editCameraSetup()
     local menu_options =
     {
       { 'a', 'Add camera configuration', addCameraConfiguration },
-      { 'l', string.format("Select left camera ('%s') (used for single cam/SL calibration)", configuration.left_camera_id), function() selectCamera('left_camera_id') end },
+      { 'l', string.format("Select left camera ('%s')", configuration.left_camera_id), function() selectCamera('left_camera_id') end },
       { 'r', string.format("Select right camera ('%s')", configuration.right_camera_id), function() selectCamera('right_camera_id') end }
     }
     local i = 1
@@ -732,6 +732,8 @@ local function editCameraSetup()
       menu_options[#menu_options + 1] = { tostring(i), string.format("Edit camera configuration '%s'", k), function() editCamera(k) end }
       i = i + 1
     end
+    menu_options[#menu_options + 1] = { 'm', string.format('Select camera mounting (\'%s\')', configuration.camera_location_mode), selectCameraLocation }
+    menu_options[#menu_options + 1] = { 't', string.format('Select camera type (\'%s\')',configuration.camera_type), selectCameraType }
     menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
     return menu_options
   end
@@ -746,16 +748,14 @@ local function showMainMenu()
     return {
       { '1', string.format('Set calibration mode (%s)', configuration.calibration_mode), selectCalibrationMode },
       { '2', string.format("Select move-group ('%s')", configuration.move_group_name), selectMoveGroup },
-      { '3', string.format('Edit camera setup (%d configured)', #table.keys(configuration.cameras)), editCameraSetup },
+      { '3', string.format('Edit camera setup (%d configured, \'%s\' setup, \'%s\' type)', #table.keys(configuration.cameras), configuration.camera_location_mode, configuration.camera_type), editCameraSetup },
       { '4', string.format('Set circle pattern ID (%d)', configuration.circle_pattern_id), setPatternId },
       { '5', 'Teach base poses',  teachBasePoses },
       { '6', string.format('Teach capture poses (%d defined)', #configuration.capture_poses), teachCapturePoses },
       { '7', string.format('Set velocity scaling (%f)', configuration.velocity_scaling), setVelocityScaling },
       { '8', 'Actuator menu', showActuatorMenu },
       { '9', 'Dump configuration', dumpConfiguration },
-      { 'c', string.format('Camera location selection (\'%s\' camera setup)', configuration.camera_location_mode), selectCameraLocation },
       { 'g', string.format('Gripper selection (%s)', configuration.gripper_key) , selectGripper },
-      { 't', string.format('Camera type selection (%s)',configuration.camera_type) , selectCameraType },
       { 'e', string.format('Teach poses for evaluation (%d defined)', #configuration.eval_poses), teachEvalPoses },
       { 's', 'Save configuration',  saveConfiguration },
       { 'ESC', 'Quit', false },
