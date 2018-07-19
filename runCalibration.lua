@@ -31,8 +31,6 @@ local BASE_POSE_NAMES = ac.BASE_POSE_NAMES
 require 'ximea.ros.XimeaClient'
 local GenICamClient = ac.GenICamCameraClient
 
-local offline = true  -- in case we are reading images from files and not really connecting to the driver set offline to true
-
 
 local prompt
 local configuration
@@ -513,12 +511,14 @@ local function main(nh)
   cmd:text('Xamla AutoCalibration script.')
   cmd:text()
   cmd:option('-cfg', 'configuration.t7', 'configuration input filename')
-  cmd:option('-scan', false, 'specify to enable structured light scanning')
-  cmd:option('-offline', false, 'set for offline mode')
+  cmd:option('-offline', 'false', 'set for offline mode')
 
   local opt = cmd:parse(arg)
   local filename = opt.cfg
-  offline = opt.offline
+  local offline = false
+  if opt.offline == 'true' then
+    offline = true
+  end
   configuration = torch.load(filename)
 
   camera_client = {}
