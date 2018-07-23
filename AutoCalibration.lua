@@ -754,7 +754,7 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       equal = false
     end
     if equal == true then
-      print("Ok, pattern has not been found in same images for left and right camera.")
+      print("Ok, pattern has been found in same images for left and right camera.")
     else
       -- extract point centers
       objectPoints = {}
