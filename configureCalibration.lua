@@ -150,7 +150,14 @@ end
 
 local function setCameraType(key)
   configuration.camera_type = key
-  printf('New selected camera type: %s', configuration.camera_type)
+  if #camera_serials > 0 then
+    if configuration.camera_type == 'ximea' then
+      camera_client = XimeaClient(nh, 'ximea_mono', false, false)
+    elseif configuration.camera_type == 'genicam' then
+      camera_client = GenICamClient(nh, 'genicam_mono', false, false)
+    end
+  end
+  printf('New selected camera type: %s', configuration.camera_type) 
   prompt:anyKey()
 end
 
