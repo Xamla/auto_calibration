@@ -577,7 +577,7 @@ local function extractPoints(image_paths, pattern_localizer, pattern_id)
       local ok, points = findPattern(img, rows, cols)
       if ok then
         found[#found+1] = points
-        print('[OK] (%dx%d)', fn, w, h)
+        printf('[OK] %s (%dx%d)', fn, w, h)
       else
         printf("[Warning] Pattern not found in image file '%s'", fn)
         printf("Index of not usable image: %d", i)
@@ -621,6 +621,8 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
 
   -- extract point centers
   local objectPoints = {}
+  local objectPointsLeft = {}
+  local objectPointsRight = {}
   local imagePointsLeft
   local imagePointsRight
   local not_found_left
@@ -655,7 +657,6 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
     -- generate object points and mono calibrate both cameras
     if serial == left_camera.serial then
       local groundTruthPointsLeft = generatePatternPoints(self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.pattern_localizer.pattern.pointDist)
-      local objectPointsLeft = {}
       for i=1,#imagePoints do
         objectPointsLeft[#objectPointsLeft+1] = groundTruthPointsLeft
       end
@@ -690,7 +691,6 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
       not_found_left = not_found
     else
       local groundTruthPointsRight = generatePatternPoints(self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.pattern_localizer.pattern.pointDist)
-      local objectPointsRight = {}
       for i=1,#imagePoints do
         objectPointsRight[#objectPointsRight+1] = groundTruthPointsRight
       end
@@ -730,14 +730,62 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
   print('calibrationFlags = ')
   print(calibrationFlags)
 
-  if next(not_found_left) ~= nil then
+  if next(not_found_left) == nil and next(not_found_right) == nil then
+    print("Ok, pattern has been found in same (all) images for left and right camera.")
+  elseif next(not_found_left) ~= nil and next(not_found_right) == nil then
     for i = 1,#not_found_left do
       table.remove(imagePointsRight, not_found_left[i])
+      objectPoints = objectPointsLeft
     end
-  end
-  if next(not_found_right) ~= nil then
+  elseif next(not_found_right) ~= nil and next(not_found_left) == nil then
     for i = 1,#not_found_right do
       table.remove(imagePointsLeft, not_found_right[i])
+      objectPoints = objectPointsRight
+    end
+  elseif next(not_found_left) ~= nil and next(not_found_right) ~= nil then
+    local equal = true
+    if #not_found_left == #not_found_right then     
+      for i = 1,#not_found_left do
+        if not_found_left[i] ~= not_found_right[i] then
+          equal = false
+        end
+      end
+    else
+      equal = false
+    end
+    if equal == true then
+      print("Ok, pattern has not been found in same images for left and right camera.")
+    else
+      -- extract point centers
+      objectPoints = {}
+      imagePointsLeft = {}
+      imagePointsRight = {}
+      local image_path_left_cam = {}
+      local image_path_right_cam = {}
+      for _, image_path in pairs(image_paths) do
+        if string.match(image_path, left_camera.serial) then
+          table.insert(image_path_left_cam, image_path)
+        elseif string.match(image_path, right_camera.serial) then
+          table.insert(image_path_right_cam, image_path)
+        end
+      end
+      for i = #not_found_right, 1, -1 do
+        table.remove(image_path_left_cam, not_found_right[i])
+      end
+      for i = #not_found_left, 1, -1 do
+        table.remove(image_path_right_cam, not_found_left[i])
+      end
+      print("image_path_left_cam without not_found_right:")
+      print(image_path_left_cam)
+      print("image_path_right_cam without not_found_left:")
+      print(image_path_right_cam)
+      imagePointsLeft = extractPoints(image_path_left_cam, self.pattern_localizer, pattern_id)
+      imagePointsRight = extractPoints(image_path_right_cam, self.pattern_localizer, pattern_id)
+      -- generate object points
+      local gt_Points = generatePatternPoints(self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.pattern_localizer.pattern.pointDist)
+      for i=1,#imagePointsLeft do
+        objectPoints[#objectPoints+1] = gt_Points
+      end
     end
   end
 
