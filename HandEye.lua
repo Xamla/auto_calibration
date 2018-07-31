@@ -363,7 +363,6 @@ function HandEye:calibrate(imgData)
     local patternBaseTrafo = Hg[1] * bestHESolution * Hc[1]
     print("base -> pattern trafo (i.e. pattern pose in base coordinates):")
     print(patternBaseTrafo)
-    self.H_pattern_to_base = patternBaseTrafo
     file_output_path = path.join(output_path, 'PatternBase.t7')
     torch.save(file_output_path, patternBaseTrafo)
     link_target = path.join('..', self.calibration_folder_name, 'PatternBase.t7')
@@ -373,17 +372,35 @@ function HandEye:calibrate(imgData)
     return bestHESolution, patternBaseTrafo
   else
     local cameraBaseTrafo = Hg[1] * bestHESolution * Hc[1]
-    print("base -> camera trafo (i.e. camera pose in base coordinates):")
-    print("Note: For a stereo setup, this is the pose of the left camera with serial: "..self.configuration.cameras[self.configuration.left_camera_id].serial)
-    print(cameraBaseTrafo)
-    self.H_cam_to_base = cameraBaseTrafo
-    file_output_path = path.join(output_path, 'LeftCamBase.t7')
-    torch.save(file_output_path, cameraBaseTrafo)
-    link_target = path.join('..', self.calibration_folder_name, 'LeftCamBase.t7')
-    current_output_path = path.join(self.current_path, 'LeftCamBase.t7')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-    return bestHESolution, cameraBaseTrafo
+    if imgData.jsposes.recorded_pose_of_reference ~= nil then
+      local cameraRefFrameTrafo = torch.inverse(imgData.jsposes.recorded_pose_of_reference) * cameraBaseTrafo
+      print(string.format("%s -> camera trafo:", self.configuration.camera_reference_frame))
+      if self.configuration.calibration_mode == "StereoRig" then
+        print("Note: For a stereo setup, this is the pose of the left camera with serial: "..self.configuration.cameras[self.configuration.left_camera_id].serial)
+        print(string.format("      in %s coordinates.", self.configuration.camera_reference_frame))
+      end
+      print(cameraRefFrameTrafo)
+      file_output_path = path.join(output_path, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
+      torch.save(file_output_path, cameraRefFrameTrafo)
+      link_target = path.join('..', self.calibration_folder_name, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
+      current_output_path = path.join(self.current_path, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
+      os.execute('rm -f ' .. current_output_path)
+      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+      return bestHESolution, cameraRefFrameTrafo
+    else
+      print("base -> camera trafo (i.e. camera pose in base coordinates):")
+      if self.configuration.calibration_mode == "StereoRig" then
+        print("Note: For a stereo setup, this is the pose of the left camera with serial: "..self.configuration.cameras[self.configuration.left_camera_id].serial)
+      end
+      print(cameraBaseTrafo)
+      file_output_path = path.join(output_path, 'LeftCamBase.t7')
+      torch.save(file_output_path, cameraBaseTrafo)
+      link_target = path.join('..', self.calibration_folder_name, 'LeftCamBase.t7')
+      current_output_path = path.join(self.current_path, 'LeftCamBase.t7')
+      os.execute('rm -f ' .. current_output_path)
+      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+      return bestHESolution, cameraBaseTrafo
+    end
   end
 end
 
@@ -482,13 +499,11 @@ function HandEye:movePattern()
   print('Calling HandEye:movePattern() method')
   --if the calibration data is missing, read it from the file
   if self.configuration.camera_location_mode == 'onboard' then
-    if self.H_camera_to_tcp == nil or self.H_pattern_to_base == nil then
-      self.H_pattern_to_base = torch.load(files_path .. "/PatternBase.t7")
+    if self.H_camera_to_tcp == nil then
       self.H_camera_to_tcp = torch.load(files_path .. "/HandEye.t7")
     end
   else
-    if self.H_pattern_to_tcp == nil or self.H_cam_to_base == nil then
-      self.H_cam_to_base = torch.load(files_path .. "/LeftCamBase.t7")
+    if self.H_pattern_to_tcp == nil then
       self.H_pattern_to_tcp = torch.load(files_path .. "/HandPattern.t7")
     end
   end
@@ -559,7 +574,7 @@ function HandEye:movePattern()
   --3. compute a relative transformation (corresponding to a motion of the robot)
   --   and compute (i.e. predict) the camera<->pattern trafo after this motion
   if self.configuration.camera_location_mode == 'onboard' then -- 'onboard' camera setup
-    if self.H_camera_to_tcp ~= nil and self.H_pattern_to_base ~= nil then
+    if self.H_camera_to_tcp ~= nil then
       print('about to do a movement..')
       local relative_transformation = self:generateRelativeRotation()
       relative_transformation = self:generateRelativeTranslation(relative_transformation)
@@ -587,7 +602,7 @@ function HandEye:movePattern()
       print('please calibrate the robot first')
     end
   else -- 'extern' camera setup
-    if self.H_pattern_to_tcp ~= nil and self.H_cam_to_base ~= nil then
+    if self.H_pattern_to_tcp ~= nil then
       print('about to do a movement..')
       local relative_transformation = self:generateRelativeRotation()
       relative_transformation = self:generateRelativeTranslation(relative_transformation)
@@ -712,13 +727,11 @@ function HandEye:evaluateCalibrationComplex()
   local files_path = self.current_path
   -- if the calibration data is missing, read it from the file
   if self.configuration.camera_location_mode == 'onboard' then
-    if self.H_camera_to_tcp == nil or self.H_pattern_to_base == nil then
-      self.H_pattern_to_base = torch.load(files_path .. "/PatternBase.t7")
+    if self.H_camera_to_tcp == nil then
       self.H_camera_to_tcp = torch.load(files_path .. "/HandEye.t7")
     end
   else
-    if self.H_pattern_to_tcp == nil or self.H_cam_to_base == nil then
-      self.H_cam_to_base = torch.load(files_path .. "/LeftCamBase.t7")
+    if self.H_pattern_to_tcp == nil then
       self.H_pattern_to_tcp = torch.load(files_path .. "/HandPattern.t7")
     end
   end

@@ -319,7 +319,7 @@ function AutoCalibration:simulateCapture()
   -- we restore the values so they can be saved afterwards
   self.recorded_joint_values = {}
   self.recorded_poses = {}
-  for i = 1, #self.recorded_joint_values do
+  for i = 1, #offline_jsposes.recorded_joint_values do
     print('restoring pose #'..i)
     self.recorded_joint_values[i] = offline_jsposes.recorded_joint_values[i]
     self.recorded_poses[i] = offline_jsposes.recorded_poses[i]
@@ -446,9 +446,9 @@ function AutoCalibration:runCaptureSequence()
   local configuration = self.configuration
   local file_names = {}
   local generic_file_names = {}
-  local recorded_joint_values = {}   -- measured after getImage call
-  local recorded_poses = {}          -- poses of all joints after getImage call
-
+  local recorded_joint_values = {}   -- joint values after getImage calls
+  local recorded_poses = {}          -- end effector poses after getImage calls
+  
   local output_directory = path.join(configuration.output_directory, 'capture')
 
   print('Deleting output directory')
@@ -963,6 +963,30 @@ function AutoCalibration:savePoses()
       jsposes.recorded_joint_values[i] = self.recorded_joint_values[i]
       jsposes.recorded_poses[i] = self.recorded_poses[i]
     end
+
+    local error_code, pose_of_reference, error_msg
+    if self.configuration.camera_reference_frame ~= 'BASE' then
+      local move_group_names, move_group_details = self.move_group.motion_service:queryAvailableMoveGroups()
+      local mg_all = self.move_group.motion_service:getMoveGroup(move_group_names[1])
+      local joint_values_all = mg_all:getCurrentJointValues()
+      local joint_name = configuration.camera_reference_frame
+      local link_name = string.gsub(joint_name, "joint", "link")
+      print("reference link:")
+      print(link_name)
+      error_code, pose_of_reference, error_msg = mg_all.motion_service:queryPose(move_group_names[1], joint_values_all, link_name)
+      if pose_of_reference == nil then
+        print("Pose of reference link could not be determined!")
+        print("error_code:")
+        print(error_code)
+        print("error_msg:")
+        print(error_msg)
+      else
+        jsposes.recorded_pose_of_reference = getHomogeneousFromRosStampedPose(pose_of_reference)
+        print("pose of reference link in base coordinates:")
+        print(jsposes.recorded_pose_of_reference)
+      end
+    end
+
     print('AutoCalibration:savePoses()')
     print(jsposes)
     local poses_fn = 'jsposes.t7'

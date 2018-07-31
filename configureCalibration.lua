@@ -81,6 +81,7 @@ local configuration = {
   camera_location_mode = 'extern',
   camera_type = 'ximea',
   eval_poses = {},
+  camera_reference_frame = 'BASE'
 }
 
 
@@ -592,6 +593,39 @@ local function setCameraLocation(location)
 end
 
 
+local function selectCameraReferenceFrame()
+  prompt:printTitle('Select Reference Frame of Extern Camera(s)')
+  print("Note: Camera setup is extern from selected move group, but may be fixed onto another arm or torso of the robot.")
+  print("      If this is the case, choose the corresponding reference frame (joint), otherwise choose \'BASE\'.")
+  printf("Currently selected reference frame: '%s'", configuration.camera_reference_frame)
+  local mg_all = motion_service:getMoveGroup(move_group_names[1])
+  local mg_chosen = motion_service:getMoveGroup(configuration.move_group_name)
+  local reference_frames = {}
+  table.insert(reference_frames, 'BASE')
+  for i = 1,#mg_all.details.joint_names do
+    local joint = mg_all.details.joint_names[i]
+    local flag = 0
+    for j = 1,#mg_chosen.details.joint_names do
+      if joint == mg_chosen.details.joint_names[j] then
+        flag = 1
+      end
+    end
+    if flag == 0 then
+      table.insert(reference_frames, mg_all.details.joint_names[i])
+    end
+  end
+  local choice = prompt:chooseFromList(reference_frames, 'Available reference frames:')
+  if choice == nil then
+    return
+  elseif configuration.camera_reference_frame == choice then
+    print('Reference frame not changed.')
+  else
+    configuration.camera_reference_frame = choice
+    printf("Changed reference frame to: '%s'", configuration.camera_reference_frame)
+  end
+end
+
+
 local function selectCameraLocation()
   local menu_options =
   {
@@ -600,6 +634,10 @@ local function selectCameraLocation()
     { 'ESC', 'Return to main menu', false },
   }
   prompt:showMenu('Edit Camera Location', menu_options)
+
+  if configuration.camera_location_mode == 'extern' and #move_group_names > 1 then
+    selectCameraReferenceFrame()
+  end
 end
 
 
@@ -739,8 +777,12 @@ local function editCameraSetup()
       menu_options[#menu_options + 1] = { tostring(i), string.format("Edit camera configuration '%s'", k), function() editCamera(k) end }
       i = i + 1
     end
-    menu_options[#menu_options + 1] = { 'm', string.format('Select camera mounting (\'%s\')', configuration.camera_location_mode), selectCameraLocation }
-    menu_options[#menu_options + 1] = { 't', string.format('Select camera type (\'%s\')',configuration.camera_type), selectCameraType }
+    if configuration.camera_location_mode == 'extern' then
+      menu_options[#menu_options + 1] = { 'm', string.format('Select camera mounting (\'%s\', reference frame: \'%s\')', configuration.camera_location_mode, configuration.camera_reference_frame), selectCameraLocation }
+    else
+      menu_options[#menu_options + 1] = { 'm', string.format('Select camera mounting (\'%s\')', configuration.camera_location_mode), selectCameraLocation }
+    end
+    menu_options[#menu_options + 1] = { 't', string.format('Select camera type (\'%s\')', configuration.camera_type), selectCameraType }
     menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
     return menu_options
   end
