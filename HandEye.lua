@@ -155,7 +155,7 @@ function HandEye:getEndEffectorName()
   end
   local tcp_frame_of_reference = move_group_details[move_group_names[index]].end_effector_link_names[1]
   local tcp_end_effector_name = move_group_details[move_group_names[index]].end_effector_names[1]
-  return tcp_frame_of_reference,tcp_end_effector_name
+  return tcp_frame_of_reference, tcp_end_effector_name
 end
 
 
@@ -380,6 +380,7 @@ function HandEye:calibrate(imgData)
         print(string.format("      in %s coordinates.", self.configuration.camera_reference_frame))
       end
       print(cameraRefFrameTrafo)
+      self.H_cam_to_refFrame = cameraRefFrameTrafo
       file_output_path = path.join(output_path, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
       torch.save(file_output_path, cameraRefFrameTrafo)
       link_target = path.join('..', self.calibration_folder_name, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
@@ -393,6 +394,7 @@ function HandEye:calibrate(imgData)
         print("Note: For a stereo setup, this is the pose of the left camera with serial: "..self.configuration.cameras[self.configuration.left_camera_id].serial)
       end
       print(cameraBaseTrafo)
+      self.H_cam_to_base = cameraBaseTrafo
       file_output_path = path.join(output_path, 'LeftCamBase.t7')
       torch.save(file_output_path, cameraBaseTrafo)
       link_target = path.join('..', self.calibration_folder_name, 'LeftCamBase.t7')
@@ -708,6 +710,47 @@ function HandEye:publishHandEye()
       ok, error = self.world_view_client:updatePose("HandEye", '', hand_eye_pose)
       if not ok then
         print(error)
+      end
+    end
+  elseif self.configuration.camera_location_mode == 'extern' then
+    if self.configuration.camera_reference_frame == 'BASE' or self.configuration.camera_reference_frame == nil then
+      if self.H_cam_to_base == nil then
+        self.H_cam_to_base = torch.load(files_path .. "/LeftCamBase.t7")
+        if self.H_cam_to_base == nil then
+          print("could not find LeftCamBase.t7")
+          return
+        end
+      end
+      print(self.H_cam_to_base)
+      local cam_base_pose = datatypes.Pose()
+      cam_base_pose.stampedTransform:fromTensor(self.H_cam_to_base)
+      cam_base_pose:setFrame('world')
+      local ok, error = self.world_view_client:addPose("CamBase", '', cam_base_pose)
+      if not ok then
+        ok, error = self.world_view_client:updatePose("CamBase", '', cam_base_pose)
+        if not ok then
+          print(error)
+        end
+      end
+    else
+      if self.H_cam_to_refFrame == nil then
+        self.H_cam_to_refFrame = torch.load(files_path .. string.format("/LeftCam_%s.t7", self.configuration.camera_reference_frame))
+        if self.H_cam_to_refFrame == nil then
+          print(string.format("could not find LeftCam_%s.t7", self.configuration.camera_reference_frame))
+          return
+        end
+      end
+      print(self.H_cam_to_refFrame)
+      local cam_refFrame_pose = datatypes.Pose()
+      cam_refFrame_pose.stampedTransform:fromTensor(self.H_cam_to_refFrame)
+      local link_name = string.gsub(self.configuration.camera_reference_frame, "joint", "link")
+      cam_refFrame_pose:setFrame(link_name)
+      local ok, error = self.world_view_client:addPose(string.format("Cam_%s", link_name), '', cam_refFrame_pose)
+      if not ok then
+        ok, error = self.world_view_client:updatePose(string.format("Cam_%s", link_name), '', cam_refFrame_pose)
+        if not ok then
+          print(error)
+        end
       end
     end
   end
