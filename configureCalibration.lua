@@ -271,6 +271,18 @@ local function editPoseList(pos_list)
       return nil -- abort
     end
   end
+
+  print('How many additional poses? Enter the number of additional poses to teach:')
+  local count = prompt:readNumber()
+  if count > 0 and count == count then
+    for i=#pos_list+1,#pos_list+count do
+      last_q = definePos(pos_list, last_q, i)
+      if last_q == nil then
+        return nil
+      end
+    end
+  end
+
   return pos_list
 end
 
