@@ -48,6 +48,7 @@ local prompt
 local move_group_names, move_group_details
 local camera_serials
 local filename = 'configuration.t7'
+local nh
 
 
 -- create Camera configuration table
@@ -71,7 +72,7 @@ local configuration = {
   calibration_directory_template = '%Y-%m-%d_%H%M%S/',
   calibration_name_template = '%Y-%m-%d_%H%M%S',
   calibration_flags_name = 'Default',
-  circle_pattern_geometry = torch.Tensor({21, 8, 0.005}), -- rows, cols, pointDist
+  circle_pattern_geometry = torch.Tensor({21, 8, 0.005}), -- cols, rows, pointDist
   circle_pattern_id = 21,
   checkerboard_pattern_geometry = torch.Tensor({7, 12, 10}),
   velocity_scaling = 0.2,
@@ -149,35 +150,7 @@ local function selectGripper()
 end
 
 
-local function setCameraType(key)
-  configuration.camera_type = key
-  if #camera_serials > 0 then
-    if configuration.camera_type == 'ximea' then
-      camera_client = XimeaClient(nh, 'ximea_mono', false, false)
-    elseif configuration.camera_type == 'genicam' then
-      camera_client = GenICamClient(nh, 'genicam_mono', false, false)
-    end
-  end
-  printf('New selected camera type: %s', configuration.camera_type) 
-  prompt:anyKey()
-end
-
-
-local function selectCameraType()
-  local menu_options = {}
-  menu_options[1] = { '1', 'ximea', function() setCameraType('ximea') return false end}
-  menu_options[2] = { '2', 'genicam', function() setCameraType('genicam') return false end}
-  menu_options[3] = { 'ESC', 'Quit', false }
-  prompt:showMenu('Camera Type Selction', menu_options)
-end
-
-
-local function getCameraIds()
-  return table.keys(configuration.cameras)
-end
-
-
-local function queryCameraSerials(nh)
+local function queryCameraSerials()
   if configuration.camera_type == 'ximea' then
     local getConnectedDevices = nh:serviceClient(GET_CONNECTED_XIMEA_DEVICES_SERVICE_NAME, ros.SrvSpec('ximea_msgs/GetConnectedDevices'), false)
     local response = getConnectedDevices:call()
@@ -196,6 +169,50 @@ local function queryCameraSerials(nh)
     end
     return response.serials
   end
+end
+
+
+local function setCameraType(key)
+  configuration.camera_type = key
+  camera_serials = {}
+  camera_serials = queryCameraSerials()
+  if next(camera_serials) == nil then
+    camera_serials = queryCameraSerials()
+  end
+  if #camera_serials > 0 and #table.keys(configuration.cameras) == 0 then
+    -- create default configuration left
+    configuration.cameras[DEFAULT_CAMERA_ID] = createCameraConfiguration(DEFAULT_CAMERA_ID, camera_serials[1])
+    configuration.left_camera_id = DEFAULT_CAMERA_ID
+    --if there is a second camera, create the configuration for it
+    if #camera_serials == 2 then
+      configuration.cameras[RIGHT_CAMERA_ID] = createCameraConfiguration(RIGHT_CAMERA_ID, camera_serials[2])
+      configuration.right_camera_id = RIGHT_CAMERA_ID
+    end
+  end
+  if #camera_serials > 0 then
+    if configuration.camera_type == 'ximea' then
+      camera_client = XimeaClient(nh, 'ximea_mono', false, false)
+    elseif configuration.camera_type == 'genicam' then
+      camera_client = GenICamClient(nh, 'genicam_mono', false, false)
+    end
+  end
+  printf('New selected camera type: %s', configuration.camera_type) 
+  prompt:showList(camera_serials, string.format('Available Cameras of type %s:', configuration.camera_type))
+  prompt:anyKey()
+end
+
+
+local function selectCameraType()
+  local menu_options = {}
+  menu_options[1] = { '1', 'ximea', function() setCameraType('ximea') return false end}
+  menu_options[2] = { '2', 'genicam', function() setCameraType('genicam') return false end}
+  menu_options[3] = { 'ESC', 'Quit', false }
+  prompt:showMenu('Camera Type Selction', menu_options)
+end
+
+
+local function getCameraIds()
+  return table.keys(configuration.cameras)
 end
 
 
@@ -473,6 +490,32 @@ local function setPatternId()
   prompt:anyKey()
 end
 
+
+local function setPatternGeometry()
+  prompt:printTitle('Set Calibration Pattern Geometry')
+  print('Current calibration pattern geometry (cols, rows, distance):')
+  print(configuration.circle_pattern_geometry)
+  print('Enter number of columns:')
+  local cols = prompt:readNumber()
+  print('Enter number of rows:')
+  local rows = prompt:readNumber()
+  print('Enter point distance:')
+  local dist = prompt:readNumber()
+  if rows ~= nil and rows > 0 and cols ~= nil and cols > 0 and dist ~= nil and dist > 0 then
+    configuration.circle_pattern_geometry = torch.Tensor({cols, rows, dist})
+    print('New calibration pattern geometry:')
+    print(configuration.circle_pattern_geometry)
+  else
+    print('Invalid pattern geometry. Nothing changed.')
+  end
+  prompt:anyKey()
+end
+
+
+local function setPatternData()
+  setPatternId()
+  setPatternGeometry()
+end
 
 local function teachBasePoses()
   prompt:printTitle('Teach Base Poses')
@@ -798,7 +841,7 @@ local function showMainMenu()
       { '1', string.format('Set calibration mode (%s)', configuration.calibration_mode), selectCalibrationMode },
       { '2', string.format("Select move-group ('%s')", configuration.move_group_name), selectMoveGroup },
       { '3', string.format('Edit camera setup (%d configured, \'%s\' setup, \'%s\' type)', #table.keys(configuration.cameras), configuration.camera_location_mode, configuration.camera_type), editCameraSetup },
-      { '4', string.format('Set circle pattern ID (%d)', configuration.circle_pattern_id), setPatternId },
+      { '4', string.format('Set circle pattern data (ID: %d, cols: %d, rows: %d, point distance: %f)', configuration.circle_pattern_id, configuration.circle_pattern_geometry[1], configuration.circle_pattern_geometry[2], configuration.circle_pattern_geometry[3]), setPatternData },
       { '5', 'Teach base poses',  teachBasePoses },
       { '6', string.format('Teach capture poses (%d defined)', #configuration.capture_poses), teachCapturePoses },
       { '7', string.format('Set velocity scaling (%f)', configuration.velocity_scaling), setVelocityScaling },
@@ -814,7 +857,7 @@ local function showMainMenu()
 end
 
 
-local function main(nh)
+local function main()
   prompt:printXamlaBanner()
   print(' AutoCalibration v.0 Configuration\n\n')
 
@@ -827,9 +870,9 @@ local function main(nh)
 
   -- query camera serial numbers
   camera_serials = {}
-  camera_serials = queryCameraSerials(nh)
+  camera_serials = queryCameraSerials()
   if next(camera_serials) == nil then
-    camera_serials = queryCameraSerials(nh)
+    camera_serials = queryCameraSerials()
   end
   if #camera_serials > 0 and #table.keys(configuration.cameras) == 0 then
     -- create default configuration left
@@ -852,7 +895,7 @@ local function main(nh)
   createMoveGroup()
 
   prompt:showList(move_group_names, 'Available MoveGroups:')
-  prompt:showList(camera_serials, 'Available Cameras:')
+  prompt:showList(camera_serials, string.format('Available Cameras of type %s:', configuration.camera_type))
 
   local p = io.popen("pwd")
   local start_path = p:read("*l")
@@ -902,13 +945,13 @@ local function init()
 
   -- initialize ROS
   ros.init('configureCalibration', ros.init_options.AnonymousName)
-  local nh = ros.NodeHandle()
+  nh = ros.NodeHandle()
   local sp = ros.AsyncSpinner()
   sp:start()
 
   prompt = xutils.Prompt()
   prompt:enableRawTerminal()
-  ok, err = pcall(function() main(nh) end)
+  ok, err = pcall(function() main() end)
   prompt:restoreTerminalAttributes()
 
   if not ok then
