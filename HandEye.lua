@@ -314,6 +314,7 @@ function HandEye:calibrate(imgData)
 
   -- perform cross validation
   local bestHESolution, alignmentErrorTest, alignmentError = calib.calibrateViaCrossValidation(Hg, Hc, #Hg-2, 5)
+  bestHESolution = bestHESolution or H
   if self.configuration.camera_location_mode == 'onboard' then
     print("Best Hand-Eye solution:") -- TCP <-> Camera
     print(bestHESolution)
@@ -321,7 +322,6 @@ function HandEye:calibrate(imgData)
     print("Best Hand-Pattern solution:") -- TCP <-> Pattern
     print(bestHESolution)
   end
-  bestHESolution = bestHESolution or H
 
   -- save result and create links at the 'current' folder
   if self.configuration.camera_location_mode == 'onboard' then
