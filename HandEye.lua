@@ -168,7 +168,12 @@ local function createPatternLocalizer(self)
   pattern_localizer:setDBScanParams(100, 10)
   pattern_localizer.debugParams = { circleSearch = false, clustering = false, pose = false }
   pattern_localizer:setPatternData(pattern_geometry[2], pattern_geometry[1], pattern_geometry[3])
-  pattern_localizer:setStereoCalibration(self.stereoCalibration)
+  local mode = self.configuration.calibration_mode
+  if mode == CalibrationMode.SingleCamera then
+    pattern_localizer:setCamIntrinsics(self.calibration)
+  elseif mode == CalibrationMode.StereoRig then
+    pattern_localizer:setStereoCalibration(self.stereoCalibration)
+  end
   self.pattern_localizer = pattern_localizer
 end
 
@@ -238,6 +243,7 @@ function HandEye:calibrate(imgData)
 
   -- extract pattern points:
   createPatternLocalizer(self)
+
   local imagesTakenForHandPatternCalib = {}
   if mode == CalibrationMode.StereoRig then
     for i, fn in ipairs(imgDataLeft.imagePaths) do
@@ -263,6 +269,7 @@ function HandEye:calibrate(imgData)
     for i, fn in ipairs(imgDataSingle.imagePaths) do
       local fn = imgDataSingle.imagePaths[i]
       local img = cv.imread {fn}
+      img = cv.undistort {src = img, distCoeffs = self.distCoeffs, cameraMatrix = self.cameraMatrix}
       local robotPose = imgData.jsposes.recorded_poses[i]
       local patternPoseRelToCamera, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern, false, nil, self.configuration.circle_pattern_id)
       if patternPoseRelToCamera ~= nil then

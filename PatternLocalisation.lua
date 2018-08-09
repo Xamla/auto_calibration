@@ -256,6 +256,65 @@ local function findMarker(markerList, markerId)
 end
 
 
+function PatternLocalisation:calcCamPose_original(inputImg, camIntrinsics, patternData, doDebug, imgShowInput)
+  doDebug = doDebug or false
+  local camPoseFinal
+
+  local blobDetector = cv.SimpleBlobDetector {self.circleFinderParams}
+
+  local found, points =
+    cv.findCirclesGrid {
+    image = inputImg,
+    patternSize = {height = patternData.height, width = patternData.width},
+    flags = cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING,
+    blobDetector = blobDetector
+  }
+
+  if found then
+    local points3d = self:generatePatternPoints(patternData.width, patternData.height, patternData.pointDist)
+    local poseFound, poseCamRotVector, poseCamTrans =
+      cv.solvePnP {
+      objectPoints = points3d,
+      imagePoints = points,
+      cameraMatrix = camIntrinsics,
+      distCoeffs = torch.DoubleTensor(1, 5):zero()
+    }
+    local poseCamRotMatrix = self:rotVectorToMat3x3(poseCamRotVector)
+    camPoseFinal = torch.DoubleTensor(4, 4):zero()
+    camPoseFinal[{{1, 3}, {1, 3}}] = poseCamRotMatrix
+    camPoseFinal[{{1, 3}, {4}}] = poseCamTrans
+    camPoseFinal[4][4] = 1
+  end
+
+  if doDebug then
+    local imgShow
+    if imgShowInput ~= nil then
+      imgShow = imgShowInput
+    else
+      imgShow = self:grayToRGB(inputImg)
+    end
+    if found then
+      cv.drawChessboardCorners {image = imgShow, patternSize = pattern, corners = points, patternWasFound = found}
+    end
+    imgShow = cv.resize {imgShow, {imgShow:size(2) * self.imgShowRescale, imgShow:size(1) * self.imgShowRescale}}
+    cv.putText {
+      imgShow,
+      text = "press any key to continue",
+      org = {x = 30, y = 30},
+      fontFace = cv.FONT_HERSHEY_SIMPLEX,
+      fontScale = 0.9,
+      color = {0, 0, 0},
+      thickness = 2
+    }
+    cv.imshow {"camPoseDebug", imgShow}
+    cv.waitKey {-1}
+    cv.destroyWindow {winname = "camPoseDebug"}
+  end
+
+  return camPoseFinal, points
+end
+
+
 function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, doDebug, imgShowInput, patternID)
   doDebug = doDebug or false
   imgShowInput = imgShowInput or nil
@@ -265,12 +324,14 @@ function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, d
   print("Searching calibration target.")
   local found = false
   local points
-  if inputImg:size(3) > 1 then
-    -- extract green channel (e.g. of color cams with RGB Bayer Matrix)
-    local greenImgLeft = inputImg[{{},{},2}]:clone()
-    inputImg = greenImgLeft
+  if inputImg:dim() == 3 then
+    if inputImg:size(3) > 1 then
+      -- extract green channel (e.g. of color cams with RGB Bayer Matrix)
+      local greenImgLeft = inputImg[{{},{},2}]:clone()
+      inputImg = greenImgLeft
+    end
   end
-  local foundMarkers = self:processImg(inputImg) -- if too many circle points are found, point clusters are detected in each of which we search for the pattern
+  local foundMarkers = self:processImg(inputImg, false) -- if too many circle points are found, point clusters are detected in each of which we search for the pattern
   if next(foundMarkers) ~= nil then
     if patternID ~= nil then
       local m = findMarker(foundMarkers, patternID)
@@ -425,7 +486,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
     local greenImgLeft = imgLeftRectUndist[{{},{},2}]:clone()
     imgLeftRectUndist = greenImgLeft
   end
-  local foundMarkersLeft = self:processImg(imgLeftRectUndist) -- if too many circle points are found, point clusters are detected in each of which is searched for the pattern
+  local foundMarkersLeft = self:processImg(imgLeftRectUndist, false) -- if too many circle points are found, point clusters are detected in each of which is searched for the pattern
   if next(foundMarkersLeft) ~= nil then
     if patternID ~= nil then
       local m = findMarker(foundMarkersLeft, patternID)
@@ -468,7 +529,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
     local greenImgRight = imgRightRectUndist[{{},{},2}]:clone()
     imgRightRectUndist = greenImgRight
   end
-  local foundMarkersRight = self:processImg(imgRightRectUndist) -- if too many circle points are found, point clusters are detected in each of which is searched for the pattern
+  local foundMarkersRight = self:processImg(imgRightRectUndist, false) -- if too many circle points are found, point clusters are detected in each of which is searched for the pattern
   if next(foundMarkersRight) ~= nil then
     if patternID ~= nil then
       local m = findMarker(foundMarkersRight, patternID)
@@ -1070,8 +1131,12 @@ function PatternLocalisation:getPatternId(imgInput, points, pattern)
 end
 
 
-function PatternLocalisation:processImg(inputImg)
+function PatternLocalisation:processImg(inputImg, withCamPoseCalculation)
   local camImgUndist = inputImg
+  local calcCamPose = true  
+  if withCamPoseCalculation ~= nil then
+    calcCamPose = withCamPoseCalculation
+  end  
 
   local circleList = self:findCircles(camImgUndist, self.debugParams.circleSearch)
 
@@ -1187,8 +1252,8 @@ function PatternLocalisation:processImg(inputImg)
     local pointsSorted
     local patternFound
 
-    if self.camIntrinsics ~= nil then
-      camPose, pointsSorted = self:calcCamPose(imgMasked, self.camIntrinsics, self.pattern)
+    if self.camIntrinsics ~= nil and calcCamPose == true then
+      camPose, pointsSorted = self:calcCamPose_original(imgMasked, self.camIntrinsics, self.pattern)
     else -- we don't have intrinsic cam parameters, so just calculate the point list but not the cam pose
       local blobDetector = cv.SimpleBlobDetector {self.circleFinderParams}
       patternFound, pointsSorted =
