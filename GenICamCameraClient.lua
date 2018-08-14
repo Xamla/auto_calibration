@@ -118,7 +118,7 @@ function GenICamCameraClient:setExposure(exposure_micro_sec, serials)
   if type(serials) == 'string' then
     serials = { serials }
   end
-  sendCommand(self, "setExposure", exposure_micro_sec, serials or {})
+  sendCommand(self, "ExposureTime", exposure_micro_sec, serials or {})
 end
 
 
