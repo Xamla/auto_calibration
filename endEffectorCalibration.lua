@@ -12,7 +12,7 @@
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-  
+
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -38,12 +38,12 @@ sp:start()
 local motion_service = motionLibrary.MotionService(nh)
 
 -- Determine a sphere that fits best through all given points.
--- Least squares solution to: min ||AX-B||_F 
+-- Least squares solution to: min ||AX-B||_F
 function determineSphereFromPointTable(spherePoints)
 
   assert(#spherePoints > 3)
-  -- Note: At least 4 points have to be not on a line or plane 
-  --       (i.e. matrix A has to be of full rank) 
+  -- Note: At least 4 points have to be not on a line or plane
+  --       (i.e. matrix A has to be of full rank)
 
   local A = torch.DoubleTensor(#spherePoints, 4)
   for i=1,#spherePoints do
@@ -57,14 +57,14 @@ function determineSphereFromPointTable(spherePoints)
 
   local B = torch.DoubleTensor(#spherePoints, 1)
   for i=1,#spherePoints do
-    B[i][1] = - (   spherePoints[i][1]*spherePoints[i][1] 
-                  + spherePoints[i][2]*spherePoints[i][2] 
+    B[i][1] = - (   spherePoints[i][1]*spherePoints[i][1]
+                  + spherePoints[i][2]*spherePoints[i][2]
                   + spherePoints[i][3]*spherePoints[i][3] )
   end
   print("B:")
   print(B)
 
-  -- Solve system of linear equations AX = B with "torch.gels". 
+  -- Solve system of linear equations AX = B with "torch.gels".
   local X = torch.gels(B, A)
   print("X:")
   print(X)
@@ -76,8 +76,8 @@ function determineSphereFromPointTable(spherePoints)
   -- => X = A^-1 * B = (A^T A)^-1 * A^T * B
   local B_alternative = torch.DoubleTensor(#spherePoints)
   for i=1,#spherePoints do
-    B_alternative[i] = - (   spherePoints[i][1]*spherePoints[i][1] 
-                           + spherePoints[i][2]*spherePoints[i][2] 
+    B_alternative[i] = - (   spherePoints[i][1]*spherePoints[i][1]
+                           + spherePoints[i][2]*spherePoints[i][2]
                            + spherePoints[i][3]*spherePoints[i][3] )
   end
   At = A:transpose(1, 2)
@@ -114,6 +114,7 @@ function main()
   local succ, current_joint_values = motion_service:queryJointState(move_group_details[move_group_name].joint_names)
   local plan_parameters = motion_service:getDefaultPlanParameters(move_group_name, move_group_details[move_group_name].joint_names)
   local move_group = motionLibrary.MoveGroup(motion_service, move_group_name)
+  local end_effector = move_group:getEndEffector()
 
   local saved_joint_values = {}
   --local saved_joints1 = torch.load("sphere_point_in_joint_values_1.t7")
@@ -139,10 +140,10 @@ function main()
 
   for i=1,nPoints do
     print(string.format("Please move end effector (gripper tip) to pose %d. Press return when ready.", i))
-  
+
     if i <= #saved_joint_values then
       local ok, joint_path = motion_service:planJointPath(current_joint_values, saved_joint_values[i], plan_parameters)
-      local success, joint_trajectory = motion_service:planMoveJoint(joint_path, plan_parameters)  
+      local success, joint_trajectory = motion_service:planMoveJoint(joint_path, plan_parameters)
       if success == 1 then
         print("Moving ...")
         motion_service:executeJointTrajectory(joint_trajectory, plan_parameters.collision_check)
@@ -159,11 +160,8 @@ function main()
 
     local joint_set = move_group.joint_set
     local joint_values = datatypes.JointValues(joint_set, current_joint_values)
-    local error_codes, pose, error_msgs = motion_service:queryPose(move_group_name, joint_values, plan_parameters.joint_names[#plan_parameters.joint_names])
-    local sphere_point = torch.DoubleTensor(3)
-    sphere_point[1] = pose.pose.position.x
-    sphere_point[2] = pose.pose.position.y
-    sphere_point[3] = pose.pose.position.z
+    local pose = end_effector:computePose(joint_values)
+    local sphere_point = pose:getTranslation()
     print(string.format("Sphere point p%d:", i))
     print(sphere_point)
     table.insert(sphere_points, sphere_point)
@@ -172,21 +170,15 @@ function main()
   print("Endeffector calibration:")
   print("========================\n")
   local X, sphere_center, sphere_radius = determineSphereFromPointTable(sphere_points)
-  
+
   torch.save("sphere_center.t7", sphere_center)
   torch.save("sphere_radius.t7", sphere_radius)
-  
+
   succ, current_joint_values = motion_service:queryJointState(plan_parameters.joint_names)
   local joint_set = move_group.joint_set
   local joint_values = datatypes.JointValues(joint_set, current_joint_values)
-  local error_codes, tcp_pose, error_msgs = motion_service:queryPose(move_group_name, joint_values, plan_parameters.joint_names[#plan_parameters.joint_names])
-
-  local tcp_pose_tf = tf.Transform()
-  local quaternion = tf.Quaternion(tcp_pose.pose.orientation.x, tcp_pose.pose.orientation.y, tcp_pose.pose.orientation.z, tcp_pose.pose.orientation.w)
-  local origin = torch.DoubleTensor{tcp_pose.pose.position.x, tcp_pose.pose.position.y, tcp_pose.pose.position.z}
-  tcp_pose_tf:setRotation(quaternion)  
-  tcp_pose_tf:setOrigin(origin)
-  tcp_pose_4x4 = tcp_pose_tf:toTensor()
+  local pose = end_effector:computePose(joint_values)
+  tcp_pose_4x4 = pose.stampedTransform:toTensor()
   print("Current TCP pose:") -- as 4x4 matrix (in base coordinates)
   print(tcp_pose_4x4)
 
@@ -224,7 +216,7 @@ function main()
   print("After compiling the new robot configuration, starting ROS, changing into the 'World View' and choosing the corresponding move group and end effector, the interactive marker appears at the new tcp link.")
   print("\n")
   print("Note: Precision of the new \'tcp_link\' depends on how precisely the gripper tip had been moved to a fixed point from different directions.")
-  
+
   motion_service:shutdown()
   sp:stop()
   ros.shutdown()
