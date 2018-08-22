@@ -143,7 +143,7 @@ function main()
 
     if i <= #saved_joint_values then
       local ok, joint_path = motion_service:planJointPath(current_joint_values, saved_joint_values[i], plan_parameters)
-      local success, joint_trajectory = motion_service:planMoveJoint(joint_path, plan_parameters)
+      local success, joint_trajectory = motion_service:planMoveJoints(joint_path, plan_parameters)
       if success == 1 then
         print("Moving ...")
         motion_service:executeJointTrajectory(joint_trajectory, plan_parameters.collision_check)
