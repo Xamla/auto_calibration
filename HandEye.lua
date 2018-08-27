@@ -719,6 +719,20 @@ function HandEye:publishHandEye()
         print(error)
       end
     end
+    if self.configuration.calibration_mode == CalibrationMode.StereoRig then
+      print("Hand-eye matrix for second camera of stereo system:")
+      local left_cam_serial = self.configuration.cameras[self.configuration.left_camera_id].serial
+      local right_cam_serial = self.configuration.cameras[self.configuration.right_camera_id].serial
+      local stereo_calib_fn = string.format('stereo_cams_%s_%s.t7', left_cam_serial, right_cam_serial)
+      local stereo_calib = torch.load(path.join(files_path, stereo_calib_fn))
+      local interCamTrafo = stereo_calib.trafoLeftToRightCam:double()
+      local hand_eye_2 = self.H_camera_to_tcp * torch.inverse(interCamTrafo)
+      print(hand_eye_2)
+      local hand_eye_pose_2 = datatypes.Pose()
+      hand_eye_pose_2.stampedTransform:fromTensor(hand_eye_2)
+      hand_eye_pose_2:setFrame(self.tcp_frame_of_reference)
+      self.world_view_client:addPose("HandEye_Cam2",'', hand_eye_pose_2)
+    end
   elseif self.configuration.camera_location_mode == 'extern' then
     if self.configuration.camera_reference_frame == 'BASE' or self.configuration.camera_reference_frame == nil then
       if self.H_cam_to_base == nil then
