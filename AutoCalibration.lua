@@ -259,12 +259,13 @@ function AutoCalibration:pickCalibrationTarget()
   moveJ(self, base_poses['start'])
   print('open the gripper')
   local t = self.gripper:move{width=0.05, speed=0.2, force=gripper_force} -- move open
-  assert(t:hasCompletedSuccessfully() == true, 'Cannot open gripper.')
   print("Is the gripper open? Type 1 (Yes) or 2 (No) and press \'Enter\'.")
   print("1 Yes")
   print("2 No")
   local open_check = io.read("*n")
-  assert(open_check == 1)
+  if open_check ~= 1 then
+    return false
+  end  
   print('move to pre pick pose')
   moveJ(self, base_poses['pre_pick_marker'])
   print('move to pick pose')
@@ -274,7 +275,21 @@ function AutoCalibration:pickCalibrationTarget()
   -- set width to 0.0, otherwise width can be set to the width of our calibration pattern.
   -- The "wsg50" needs the width of the part to be grasped -> set width to 0.0115.
   t = self.gripper:grasp{width=0.0115, speed=0.2, force=gripper_force} -- grasp target
-  assert(t:hasCompletedSuccessfully() == true, 'Cannot grasp pattern.')
+  if t:hasCompletedSuccessfully() ~= true then
+    print("Grasp has not been successful.")
+    print("Want to try again? Type 1 (Yes) or 2 (No) and press \'Enter\'.")
+    local again = io.read("*n")
+    if again == 1 then
+      print('grasp calibration target')
+      t = self.gripper:grasp{width=0.0115, speed=0.2, force=gripper_force}
+      if t:hasCompletedSuccessfully() ~= true then
+        print("Again, grasping the pattern has not been successful.")
+        return false
+      end
+    else
+      return false
+    end
+  end
   --t = self.gripper:move{width=0.0, speed=0.2, force=30, stop_on_block=false} -- move grasp
   --assert(t:hasCompleted() == true, 'Cannot grasp pattern.')
   print('move to post pick pose')
