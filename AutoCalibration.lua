@@ -311,7 +311,21 @@ function AutoCalibration:returnCalibrationTarget()
   moveJ(self, base_poses['pick_marker'], self.configuration.velocity_scaling * 0.25)
   print('release calibration target')
   local t = self.gripper:release{width=0.05, speed=0.2, force=gripper_force} -- release target
-  assert(t:hasCompletedSuccessfully() == true, 'Cannot release pattern.')
+  if t:hasCompletedSuccessfully() ~= true then
+    print("Failed to release the pattern.")
+    print("Want to try again? Type 1 (Yes) or 2 (No) and press \'Enter\'.")
+    local again = io.read("*n")
+    if again == 1 then
+      print('release calibration target')
+      t = self.gripper:release{width=0.05, speed=0.2, force=gripper_force}
+      if t:hasCompletedSuccessfully() ~= true then
+        print("Again, failed to release the pattern.")
+        return false
+      end
+    else
+      return false
+    end
+  end
   print('move to pre pick (= post return) pose')
   moveJ(self, base_poses['pre_pick_marker'])
 end
