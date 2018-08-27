@@ -700,6 +700,14 @@ end
 
 function HandEye:publishHandEye()
   local files_path = self.current_path
+  local interCamTrafo = nil
+  if self.configuration.calibration_mode == CalibrationMode.StereoRig then
+    local left_cam_serial = self.configuration.cameras[self.configuration.left_camera_id].serial
+    local right_cam_serial = self.configuration.cameras[self.configuration.right_camera_id].serial
+    local stereo_calib_fn = string.format('stereo_cams_%s_%s.t7', left_cam_serial, right_cam_serial)
+    local stereo_calib = torch.load(path.join(files_path, stereo_calib_fn))
+    interCamTrafo = stereo_calib.trafoLeftToRightCam:double()
+  end
   if self.configuration.camera_location_mode == 'onboard' then
     if self.H_camera_to_tcp == nil then
       self.H_camera_to_tcp = torch.load(files_path .. "/HandEye.t7")
@@ -721,11 +729,6 @@ function HandEye:publishHandEye()
     end
     if self.configuration.calibration_mode == CalibrationMode.StereoRig then
       print("Hand-eye matrix for second camera of stereo system:")
-      local left_cam_serial = self.configuration.cameras[self.configuration.left_camera_id].serial
-      local right_cam_serial = self.configuration.cameras[self.configuration.right_camera_id].serial
-      local stereo_calib_fn = string.format('stereo_cams_%s_%s.t7', left_cam_serial, right_cam_serial)
-      local stereo_calib = torch.load(path.join(files_path, stereo_calib_fn))
-      local interCamTrafo = stereo_calib.trafoLeftToRightCam:double()
       local hand_eye_2 = self.H_camera_to_tcp * torch.inverse(interCamTrafo)
       print(hand_eye_2)
       local hand_eye_pose_2 = datatypes.Pose()
@@ -734,6 +737,7 @@ function HandEye:publishHandEye()
       self.world_view_client:addPose("HandEye_Cam2",'', hand_eye_pose_2)
     end
   elseif self.configuration.camera_location_mode == 'extern' then
+    print("Extern camera setup!")
     if self.configuration.camera_reference_frame == 'BASE' or self.configuration.camera_reference_frame == nil then
       if self.H_cam_to_base == nil then
         self.H_cam_to_base = torch.load(files_path .. "/LeftCamBase.t7")
@@ -742,6 +746,7 @@ function HandEye:publishHandEye()
           return
         end
       end
+      print("Camera pose in base coordinates:")
       print(self.H_cam_to_base)
       local cam_base_pose = datatypes.Pose()
       cam_base_pose.stampedTransform:fromTensor(self.H_cam_to_base)
@@ -753,6 +758,15 @@ function HandEye:publishHandEye()
           print(error)
         end
       end
+      if self.configuration.calibration_mode == CalibrationMode.StereoRig then
+        print("Pose of second camera in base coordinates:")
+        local cam2_to_base = self.H_cam_to_base * torch.inverse(interCamTrafo)
+        print(cam2_to_base)
+        local cam2_to_base_pose = datatypes.Pose()
+        cam2_to_base_pose.stampedTransform:fromTensor(cam2_to_base)
+        cam2_to_base_pose:setFrame('world')
+        self.world_view_client:addPose("Cam2Base",'', cam2_to_base_pose)
+      end
     else
       if self.H_cam_to_refFrame == nil then
         self.H_cam_to_refFrame = torch.load(files_path .. string.format("/LeftCam_%s.t7", self.configuration.camera_reference_frame))
@@ -761,6 +775,7 @@ function HandEye:publishHandEye()
           return
         end
       end
+      print(string.format("Camera pose in %s coordinates:", self.configuration.camera_reference_frame))
       print(self.H_cam_to_refFrame)
       local cam_refFrame_pose = datatypes.Pose()
       cam_refFrame_pose.stampedTransform:fromTensor(self.H_cam_to_refFrame)
@@ -772,6 +787,15 @@ function HandEye:publishHandEye()
         if not ok then
           print(error)
         end
+      end
+      if self.configuration.calibration_mode == CalibrationMode.StereoRig then
+        print(string.format("Pose of second camera in %s coordinates:", self.configuration.camera_reference_frame))
+        local cam2_to_refFrame = self.H_cam_to_refFrame * torch.inverse(interCamTrafo)
+        print(cam2_to_refFrame)
+        local cam2_to_refFrame_pose = datatypes.Pose()
+        cam2_to_refFrame_pose.stampedTransform:fromTensor(cam2_to_refFrame)
+        cam2_to_refFrame_pose:setFrame(link_name)
+        self.world_view_client:addPose(string.format("Cam2_%s", link_name),'', cam2_to_refFrame_pose)
       end
     end
   end
