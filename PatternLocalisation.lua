@@ -73,7 +73,7 @@ function PatternLocalisation:__init()
   }
 
   -- rescaling factor for visualisation
-  self.imgShowRescale = 1.0
+  self.imgShowRescale = 0.5
 end
 
 
@@ -238,7 +238,7 @@ function PatternLocalisation:mirrorPatternPoints(points, patWidth, patHeight, im
       self:plotCrosshair(imgDebug, pointsResorted[i][1][1], pointsResorted[i][1][2], 8)
       print("point " .. pointsResorted[i][1][1] .. ", y=" .. pointsResorted[i][1][2])
       cv.imshow {"debug", imgDebug}
-      cv.waitKey {-1}
+      cv.waitKey {1000}
     end
   end
 
@@ -297,17 +297,8 @@ function PatternLocalisation:calcCamPose_original(inputImg, camIntrinsics, patte
       cv.drawChessboardCorners {image = imgShow, patternSize = pattern, corners = points, patternWasFound = found}
     end
     imgShow = cv.resize {imgShow, {imgShow:size(2) * self.imgShowRescale, imgShow:size(1) * self.imgShowRescale}}
-    cv.putText {
-      imgShow,
-      text = "press any key to continue",
-      org = {x = 30, y = 30},
-      fontFace = cv.FONT_HERSHEY_SIMPLEX,
-      fontScale = 0.9,
-      color = {0, 0, 0},
-      thickness = 2
-    }
     cv.imshow {"camPoseDebug", imgShow}
-    cv.waitKey {-1}
+    cv.waitKey {1000}
     cv.destroyWindow {winname = "camPoseDebug"}
   end
 
@@ -388,21 +379,11 @@ function PatternLocalisation:calcCamPose(inputImg, camIntrinsics, patternData, d
       imgShow = self:grayToRGB(inputImg)
     end
     if found then
-      cv.drawChessboardCorners {image = imgShow, patternSize = pattern, corners = points, patternWasFound = found}
+      cv.drawChessboardCorners {image = imgShow, patternSize = { height = patternData.height, width = patternData.width }, corners = points, patternWasFound = found}
     end
     imgShow = cv.resize {imgShow, {imgShow:size(2) * self.imgShowRescale, imgShow:size(1) * self.imgShowRescale}}
-    cv.putText {
-      imgShow,
-      text = "press any key to continue",
-      org = {x = 30, y = 30},
-      fontFace = cv.FONT_HERSHEY_SIMPLEX,
-      fontScale = 0.9,
-      color = {0, 0, 0},
-      thickness = 2
-    }
     cv.imshow {"camPoseDebug", imgShow}
-    cv.waitKey {-1}
-    cv.destroyWindow {winname = "camPoseDebug"}
+    cv.waitKey {500}
   end
 
   return camPoseFinal, points
@@ -569,6 +550,23 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   print(string.format("ok1: %s", ok1))
   print(string.format("ok2: %s\n", ok2))
 
+  if doDebug then
+    local imgShowLeft = self:grayToRGB(imgLeftRectUndist)
+    if ok1 then
+      cv.drawChessboardCorners {image = imgShowLeft, patternSize = { height = self.pattern.height, width = self.pattern.width }, corners = circlesGridPointsLeft, patternWasFound = ok1}
+    end
+    imgShowLeft = cv.resize {imgShowLeft, {imgShowLeft:size(2) * self.imgShowRescale, imgShowLeft:size(1) * self.imgShowRescale}}
+    cv.imshow {"camPoseLeftDebug", imgShowLeft}
+    cv.waitKey {500}
+    local imgShowRight = self:grayToRGB(imgRightRectUndist)
+    if ok2 then
+      cv.drawChessboardCorners {image = imgShowRight, patternSize = { height = self.pattern.height, width = self.pattern.width }, corners = circlesGridPointsRight, patternWasFound = ok2}
+    end
+    imgShowRight = cv.resize {imgShowRight, {imgShowRight:size(2) * self.imgShowRescale, imgShowRight:size(1) * self.imgShowRescale}}
+    cv.imshow {"camPoseRightDebug", imgShowRight}
+    cv.waitKey {500}
+  end
+
   local ok = ok1 and ok2
   if ok then
     -- Save 2d grid points.
@@ -672,7 +670,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
     camPoseFinal = torch.eye(4)
   end
 
-  return ok, camPoseFinal
+  return ok, camPoseFinal, circlesGridPointsLeft, circlesGridPointsRight
 end
 
 
@@ -756,7 +754,7 @@ function PatternLocalisation:calcCamPoseROI(inputImg, rectROI, doDebug)
     end
 
     cv.imshow {"imgPatROI", imgShow}
-    cv.waitKey {-1}
+    cv.waitKey {1000}
     cv.destroyWindow {winname = "imgPatROI"}
   end
 
@@ -803,8 +801,7 @@ function PatternLocalisation:findCircles(inputImg, doDebug)
     end
 
     cv.imshow {"circleFinder", imgScale}
-    cv.waitKey {-1}
-    cv.destroyWindow {winname = "circleFinder"}
+    cv.waitKey {500}
   end
 
   return results
@@ -975,7 +972,7 @@ function PatternLocalisation:espChecking(circleCentersInput, queryX, queryY, deb
   end
 
   cv.imshow {"testESP", debugImg}
-  cv.waitKey {-1}
+  cv.waitKey {1000}
 end
 
 
@@ -1335,7 +1332,7 @@ function PatternLocalisation:processImg(inputImg, withCamPoseCalculation)
     end
 
     cv.imshow {"hulls", imgShow}
-    cv.waitKey {-1}
+    cv.waitKey {500}
   end
 
   return camPoseList
