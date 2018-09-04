@@ -12,7 +12,7 @@
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-  
+
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -48,7 +48,7 @@ function PatternLocalisation:__init()
     {255,128,0}, {173,204,20}, {0,204,204}, {153,102,255}, {255,0,85}, {153,77,0}, {170,255,0}, {0,213,255}, {170,0,255}, {255,77,136},
     {255,179,102}, {112,153,31}, {0,128,153}, {102,0,153}, {153,0,26}, {153,115,77}, {191,255,128}, {0,170,255}, {122,61,153}, {153,77,89}
   }
-  
+
   self:generateDefaultCircleFinderParams()
 
   self.camIntrinsics = nil
@@ -462,7 +462,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
   local circlesGridPointsLeft
   local circlesGridPointsRight
   -- Searching calibration target in left camera image:
-  if imgLeftRectUndist:size(3) > 1 then
+  if imgLeftRectUndist:dim()> 2 and imgLeftRectUndist:size(3) > 1 then
     -- extract green channel (e.g. of color cams with RGB Bayer Matrix)
     local greenImgLeft = imgLeftRectUndist[{{},{},2}]:clone()
     imgLeftRectUndist = greenImgLeft
@@ -505,7 +505,7 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
     end
   end
   -- Searching calibration target in right camera image:
-  if imgRightRectUndist:size(3) > 1 then
+  if imgRightRectUndist:dim()> 2 and imgRightRectUndist:size(3) > 1 then
     -- extract green channel (e.g. of color cams with RGB Bayer Matrix)
     local greenImgRight = imgRightRectUndist[{{},{},2}]:clone()
     imgRightRectUndist = greenImgRight
@@ -1130,10 +1130,10 @@ end
 
 function PatternLocalisation:processImg(inputImg, withCamPoseCalculation)
   local camImgUndist = inputImg
-  local calcCamPose = true  
+  local calcCamPose = true
   if withCamPoseCalculation ~= nil then
     calcCamPose = withCamPoseCalculation
-  end  
+  end
 
   local circleList = self:findCircles(camImgUndist, self.debugParams.circleSearch)
 

@@ -102,6 +102,19 @@ function determineSphereFromPointTable(spherePoints)
 end
 
 
+local function readKeySpinning()
+    local function spin()
+        if not ros.ok() then
+            return false, 'ros shutdown requested'
+        else
+            ros.spinOnce()
+            return true
+        end
+    end
+    return xutils.waitKey(spin)
+end
+
+
 function main()
 
   local move_group_names, move_group_details = motion_service:queryAvailableMoveGroups()
@@ -111,23 +124,26 @@ function main()
   local move_group_number = io.read("*n")
   local move_group_name = move_group_names[move_group_number]
   print(string.format("Chosen move group is: %s \n", move_group_name))
+
+  --local ok, curr_jv_all = motion_service:queryJointState(move_group_details["/sda10d"].joint_names)
+  --print("curr_jv_all:")
+  --print(curr_jv_all)
+
   local succ, current_joint_values = motion_service:queryJointState(move_group_details[move_group_name].joint_names)
   local plan_parameters = motion_service:getDefaultPlanParameters(move_group_name, move_group_details[move_group_name].joint_names)
   local move_group = motionLibrary.MoveGroup(motion_service, move_group_name)
   local end_effector = move_group:getEndEffector()
 
+  local joint_names = move_group:getJointNames()
+  print("joint_names", joint_names)
   local saved_joint_values = {}
-  --local saved_joints1 = torch.load("sphere_point_in_joint_values_1.t7")
-  --local saved_joints2 = torch.load("sphere_point_in_joint_values_2.t7")
-  --local saved_joints3 = torch.load("sphere_point_in_joint_values_3.t7")
-  --local saved_joints4 = torch.load("sphere_point_in_joint_values_4.t7")
-  --local saved_joints5 = torch.load("sphere_point_in_joint_values_5.t7")
-  --table.insert(saved_joint_values, saved_joints1)
-  --table.insert(saved_joint_values, saved_joints2)
-  --table.insert(saved_joint_values, saved_joints3)
-  --table.insert(saved_joint_values, saved_joints4)
-  --table.insert(saved_joint_values, saved_joints5)
-  --print(string.format("Number of saved points on sphere: %d \n", #saved_joint_values))
+  for i = 1,8 do
+    local jv = torch.load(string.format("sphere_point_in_joint_values_%d.t7", i))
+    --print(i, jv:size())
+    saved_joint_values[#saved_joint_values + 1] = datatypes.JointValues(datatypes.JointSet(joint_names), jv)
+  end
+  print(string.format("Number of saved points on sphere: %d \n", #saved_joint_values))
+  print(saved_joint_values[1])
 
   local sphere_points = {}
 
@@ -139,28 +155,25 @@ function main()
   io.read()
 
   for i=1,nPoints do
+
     print(string.format("Please move end effector (gripper tip) to pose %d. Press return when ready.", i))
 
-    if i <= #saved_joint_values then
-      local ok, joint_path = motion_service:planJointPath(current_joint_values, saved_joint_values[i], plan_parameters)
-      local success, joint_trajectory = motion_service:planMoveJoints(joint_path, plan_parameters)
-      if success == 1 then
-        print("Moving ...")
-        motion_service:executeJointTrajectory(joint_trajectory, plan_parameters.collision_check)
-        print("Movement successfully finished.")
-      else
-        ros.ERROR("Planning FAILD")
-      end
-    end
+    --if i <= #saved_joint_values then
+    --  move_group:moveJoints(saved_joint_values[i], 0.03, true)
+    --  sys.sleep(1)
+    --end
+    --io.read()
 
-    io.read()
+    --succ, current_joint_values = motion_service:queryJointState(plan_parameters.joint_names)
+    ----torch.save(string.format("sphere_point_in_joint_values_%d.t7", i), current_joint_values)
 
-    succ, current_joint_values = motion_service:queryJointState(plan_parameters.joint_names)
-    torch.save(string.format("sphere_point_in_joint_values_%d.t7", i), current_joint_values)
+    --local joint_set = move_group.joint_set
+    --local joint_values = datatypes.JointValues(joint_set, current_joint_values)
 
-    local joint_set = move_group.joint_set
-    local joint_values = datatypes.JointValues(joint_set, current_joint_values)
-    local pose = end_effector:computePose(joint_values)
+    --local pose = end_effector:computePose(joint_values)
+    
+    local pose = end_effector:computePose(saved_joint_values[i]) --joint_values)
+
     local sphere_point = pose:getTranslation()
     print(string.format("Sphere point p%d:", i))
     print(sphere_point)
