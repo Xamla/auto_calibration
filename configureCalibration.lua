@@ -82,7 +82,8 @@ local configuration = {
   camera_location_mode = 'extern',
   camera_type = 'ximea',
   eval_poses = {},
-  camera_reference_frame = 'BASE'
+  camera_reference_frame = 'BASE',
+  debug_output = false
 }
 
 
@@ -709,6 +710,24 @@ local function saveConfiguration()
 end
 
 
+local function changeDebugOutput(debug)
+  configuration.debug_output = debug
+  print(string.format('New debug output mode: %s', configuration.debug_output))
+  prompt:anyKey()
+end
+
+
+local function setDebugOutput()
+  local menu_options =
+  {
+    { '1', 'true', function() changeDebugOutput(true) return false end },
+    { '2', 'false', function() changeDebugOutput(false) return false end },
+    { 'ESC', 'Return to main menu', false },
+  }
+  prompt:showMenu('Set debug output to true or false', menu_options)
+end
+
+
 local function addCameraConfiguration()
   prompt:printTitle('Add Camera')
   local default_id = 'right'
@@ -861,6 +880,7 @@ local function showMainMenu()
       { '9', 'Dump configuration', dumpConfiguration },
       { 'g', string.format('Gripper selection (%s)', configuration.gripper_key) , selectGripper },
       { 'e', string.format('Teach poses for evaluation (%d defined)', #configuration.eval_poses), teachEvalPoses },
+      { 'd', string.format('Debug output setting (%s)', configuration.debug_output),  setDebugOutput },
       { 's', 'Save configuration',  saveConfiguration },
       { 'ESC', 'Quit', false },
     }

@@ -103,15 +103,6 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
     self:loadStereoCalibration(self.stereo_calibration_path)
   end
   self.tcp_frame_of_reference, self.tcp_end_effector_name = self:getEndEffectorName()
-
-  self.colorTable = {  -- list of colors for visualisation
-    {255,0,0}, {255,170,0}, {95,204,41}, {0,102,153}, {180,61,204}, {204,0,0}, {153,102,0}, {42,255,0}, {0,127,255}, {255,0,255},
-    {255,128,128}, {255,204,102}, {0,153,51}, {0,77,153}, {153,0,128}, {255,106,77}, {255,213,0}, {0,255,128}, {0,85,255}, {255,102,229},
-    {153,77,61}, {153,128,0}, {61,204,133}, {0,51,153}, {255,0,170}, {255,85,0}, {255,255,0}, {0,255,212}, {102,136,204}, {153,77,128},
-    {153,51,0}, {255,255,128}, {0,153,128}, {0,0,255}, {153,0,77}, {255,153,102}, {153,153,77}, {0,255,255}, {0,0,204}, {255,128,191},
-    {255,128,0}, {173,204,20}, {0,204,204}, {153,102,255}, {255,0,85}, {153,77,0}, {170,255,0}, {0,213,255}, {170,0,255}, {255,77,136},
-    {255,179,102}, {112,153,31}, {0,128,153}, {102,0,153}, {153,0,26}, {153,115,77}, {191,255,128}, {0,170,255}, {122,61,153}, {153,77,89}
-  }
 end
 
 
@@ -278,6 +269,9 @@ function HandEye:calibrate(imgData)
   -- extract pattern points:
   createPatternLocalizer(self)
 
+  if self.configuration.debug_output == nil then
+    self.configuration.debug_output = false
+  end
   local imagesTakenForHandPatternCalib = {}
   if mode == CalibrationMode.StereoRig then
     local imgGetSize = cv.imread {imgDataLeft.imagePaths[1]}
@@ -290,7 +284,7 @@ function HandEye:calibrate(imgData)
       local imgLeft = cv.imread {fnLeft}
       local imgRight = cv.imread {fnRight}
       local robotPose = imgData.jsposes.recorded_poses[i]
-      local ok, patternPoseRelToCamera, circlesGridPointsLeft, circlesGridPointsRight = self.pattern_localizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left', true, nil, self.configuration.circle_pattern_id)
+      local ok, patternPoseRelToCamera, circlesGridPointsLeft, circlesGridPointsRight = self.pattern_localizer:calcCamPoseViaPlaneFit(imgLeft, imgRight, 'left', self.configuration.debug_output, nil, self.configuration.circle_pattern_id)
       if ok then
         local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
         local cameraPatternTrafo = cameraPoseRelToPattern -- This is used for an extern camera setup.
@@ -302,20 +296,24 @@ function HandEye:calibrate(imgData)
         table.insert(Hg, robotPose)
         table.insert(imagesTakenForHandPatternCalib, i)
 
-        if i < #self.colorTable then
-          color = self.colorTable[i]
+        if self.configuration.debug_output then
+          if i < #self.pattern_localizer.colorTab then
+            color = self.pattern_localizer.colorTab[i]
+          end
+          imgShowLeft = printPatternPoints(circlesGridPointsLeft, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShowLeft)
+          imgShowRight = printPatternPoints(circlesGridPointsRight, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShowRight)
         end
-        imgShowLeft = printPatternPoints(circlesGridPointsLeft, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.colorTable[i], imgShowLeft)
-        imgShowRight = printPatternPoints(circlesGridPointsRight, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.colorTable[i], imgShowRight)
       end
     end
-    imgShowLeft = cv.resize {imgShowLeft, {imgShowLeft:size(2) * 0.5, imgShowLeft:size(1) * 0.5}}
-    imgShowRight = cv.resize {imgShowLeft, {imgShowRight:size(2) * 0.5, imgShowRight:size(1) * 0.5}}
-    cv.imshow {"Pattern distribution (left cam)", imgShowLeft}
-    cv.waitKey {5000}
-    cv.imshow {"Pattern distribution (right cam)", imgShowRight}
-    cv.waitKey {5000}
-    cv.destroyAllWindows {}
+    if self.configuration.debug_output then
+      imgShowLeft = cv.resize {imgShowLeft, {imgShowLeft:size(2) * 0.5, imgShowLeft:size(1) * 0.5}}
+      imgShowRight = cv.resize {imgShowLeft, {imgShowRight:size(2) * 0.5, imgShowRight:size(1) * 0.5}}
+      cv.imshow {"Pattern distribution (left cam)", imgShowLeft}
+      cv.waitKey {5000}
+      cv.imshow {"Pattern distribution (right cam)", imgShowRight}
+      cv.waitKey {5000}
+      cv.destroyAllWindows {}
+    end
   elseif mode == CalibrationMode.SingleCamera then
     local imgGetSize = cv.imread {imgDataSingle.imagePaths[1]}
     local imgShow = torch.ByteTensor(imgGetSize:size(1), imgGetSize:size(2), 3)
@@ -325,7 +323,7 @@ function HandEye:calibrate(imgData)
       local img = cv.imread {fn}
       img = cv.undistort {src = img, distCoeffs = self.distCoeffs, cameraMatrix = self.cameraMatrix}
       local robotPose = imgData.jsposes.recorded_poses[i]
-      local patternPoseRelToCamera, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern, true, nil, self.configuration.circle_pattern_id)
+      local patternPoseRelToCamera, points3d = self.pattern_localizer:calcCamPose(img, self.cameraMatrix, self.pattern_localizer.pattern, self.configuration.debug_output, nil, self.configuration.circle_pattern_id)
       if patternPoseRelToCamera ~= nil then
         local cameraPoseRelToPattern = torch.inverse(patternPoseRelToCamera)
         local cameraPatternTrafo = cameraPoseRelToPattern -- This is used for an extern camera setup.
@@ -337,16 +335,20 @@ function HandEye:calibrate(imgData)
         table.insert(Hg, robotPose)
         table.insert(imagesTakenForHandPatternCalib, i)
         
-        if i < #self.colorTable then
-          color = self.colorTable[i]
+        if self.configuration.debug_output then
+          if i < #self.pattern_localizer.colorTab then
+            color = self.pattern_localizer.colorTab[i]
+          end
+          imgShow = printPatternPoints(points3d, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShow)
         end
-        imgShow = printPatternPoints(points3d, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, self.colorTable[i], imgShow)
       end
     end
-    imgShow = cv.resize {imgShow, {imgShow:size(2) * 0.5, imgShow:size(1) * 0.5}}
-    cv.imshow {"Pattern distribution", imgShow}
-    cv.waitKey {5000}
-    cv.destroyAllWindows {}
+    if self.configuration.debug_output then
+      imgShow = cv.resize {imgShow, {imgShow:size(2) * 0.5, imgShow:size(1) * 0.5}}
+      cv.imshow {"Pattern distribution", imgShow}
+      cv.waitKey {5000}
+      cv.destroyAllWindows {}
+    end
   end
 
   -- H = pose of the pattern/camera in TCP coordinate frame
