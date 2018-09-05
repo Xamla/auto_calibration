@@ -515,6 +515,9 @@ local function main(nh)
   cmd:option('-offline', 'false', 'set for offline mode')
 
   local opt = cmd:parse(arg)
+
+  prompt:enableRawTerminal()
+
   local filename = opt.cfg
   offline = false
   -- in case we are reading images from files 
@@ -587,9 +590,9 @@ local function init()
   motion_service = motionLibrary.MotionService(nh)
 
   prompt = xutils.Prompt()
-  prompt:enableRawTerminal()
-  ok, err = pcall(function() main(nh) end)
-  prompt:restoreTerminalAttributes()
+  local terminal_attributes = xutils.saveTerminalAttributes()
+  ok, err = xpcall(main, debug.traceback, nh)
+  xutils.restoreTerminalAttributes(terminal_attributes)
 
   if not ok then
     print(err)
