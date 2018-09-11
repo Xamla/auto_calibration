@@ -90,7 +90,9 @@ local function main()
     print("Please enter the path to the 'tcp-to-camera' transformation (e.g. /home/username/calibration/HandEye.t7), then press 'Enter'.")
     local tcp_to_cam_path = io.read("*l")
     local tcp_to_camera = torch.load(tcp_to_cam_path)
+    print("\n")
     click_pose_in_tcp = tcp_to_camera * click_pose_in_camera
+    click_pose_in_tcp[{{1, 3}, {1, 3}}] = torch.eye(3)
     return click_pose_in_tcp
   elseif camera_location == 2 then
     print("Camera location is 'extern'.")
