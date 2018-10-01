@@ -762,12 +762,12 @@ function AutoCalibration:stereoCalibration(calibrationFlags)
   if next(not_found_left) == nil and next(not_found_right) == nil then
     print("Ok, pattern has been found in same (all) images for left and right camera.")
   elseif next(not_found_left) ~= nil and next(not_found_right) == nil then
-    for i = 1,#not_found_left do
+    for i = #not_found_left, 1, -1 do
       table.remove(imagePointsRight, not_found_left[i])
       objectPoints = objectPointsLeft
     end
   elseif next(not_found_right) ~= nil and next(not_found_left) == nil then
-    for i = 1,#not_found_right do
+    for i = #not_found_right, 1, -1 do
       table.remove(imagePointsLeft, not_found_right[i])
       objectPoints = objectPointsRight
     end
