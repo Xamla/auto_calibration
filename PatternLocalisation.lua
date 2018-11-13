@@ -657,10 +657,15 @@ function PatternLocalisation:calcCamPoseViaPlaneFit(imgLeft, imgRight, whichCam,
       new_y_unit_vec = -1.0 * new_y_unit_vec
     end
 
+    local newer_x_unit_vec = torch.cross(new_y_unit_vec, z_unit_vec)
+    newer_x_unit_vec = torch.div(newer_x_unit_vec, torch.norm(newer_x_unit_vec))
+    new_y_unit_vec = torch.div(new_y_unit_vec, torch.norm(new_y_unit_vec))
+    z_unit_vec = torch.div(z_unit_vec, torch.norm(z_unit_vec))
+
     -- Transform pattern coordinate system into camera coordinate system:
     -- M_B->A = (x_unit_vec, y_unit_vec, z_unit_vec, support vector)
     camPoseFinal = torch.DoubleTensor(4, 4):zero()
-    camPoseFinal[{{1, 3}, {1}}] = new_x_unit_vec
+    camPoseFinal[{{1, 3}, {1}}] = newer_x_unit_vec
     camPoseFinal[{{1, 3}, {2}}] = new_y_unit_vec
     camPoseFinal[{{1, 3}, {3}}] = z_unit_vec
     camPoseFinal[{{1, 3}, {4}}] = pointsInCamCoords[1] -- = support vector
