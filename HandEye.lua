@@ -116,6 +116,8 @@ function HandEye:loadStereoCalibration(stereo_calib_fn)
     self.leftDistCoeffs = stereoCalib.camLeftDistCoeffs
     self.rightDistCoeffs =  stereoCalib.camRightDistCoeffs
     self.rightLeftCamTrafo = stereoCalib.trafoLeftToRightCam
+    print("self.rightLeftCamTrafo:")
+    print(self.rightLeftCamTrafo)
     print('read stereo calibration file '..stereo_calib_fn)
     return true
   else
@@ -223,6 +225,83 @@ local function printPatternPoints(points3d, pattern_height, pattern_width, color
       }
     end
   return imgShow
+end
+
+
+local function transformMatrixToQuaternion(rot)
+  local sqrt = math.sqrt
+  local trace = rot[1][1] + rot[2][2] + rot[3][3]
+  local _next = { 2, 3, 1 }
+  local q = torch.zeros(4)
+  if trace > 0 then
+    local r = sqrt(trace + 1)
+    local s = 0.5 / r
+    q[1] = 0.5 * r
+    q[2] = (rot[3][2] - rot[2][3]) * s
+    q[3] = (rot[1][3] - rot[3][1]) * s
+    q[4] = (rot[2][1] - rot[1][2]) * s
+  else
+    local i = 1
+    if rot[2][2] > rot[1][1] then
+      i = 2
+    end
+    if rot[3][3] > rot[i][i] then
+      i = 3
+    end
+    local j = _next[i]
+    local k = _next[j]
+    local t = rot[i][i] - rot[j][j] - rot[k][k] + 1
+    local r = sqrt(t)
+    local s = 0.5 / sqrt(t)
+    local w = (rot[k][j] - rot[j][k]) * s
+    q[1] = w
+    q[i+1] = 0.5 * r
+    q[j+1] = (rot[j][i] + rot[i][j]) * s
+    q[k+1] = (rot[k][i] + rot[i][k]) * s
+  end
+  return q/q:norm()
+end
+
+
+local function transformQuaternionToMatrix(q)
+  local w = q[1]
+  local x = q[2]
+  local y = q[3]
+  local z = q[4]
+  local result = torch.DoubleTensor(3,3)
+  result[1][1] = 1 - 2*y*y - 2*z*z
+  result[1][2] = 2*x*y - 2*w*z
+  result[1][3] = 2*x*z + 2*w*y
+  result[2][1] = 2*x*y + 2*w*z
+  result[2][2] = 1 - 2*x*x - 2*z*z
+  result[2][3] = 2*y*z - 2*w*x
+  result[3][1] = 2*x*z - 2*w*y
+  result[3][2] = 2*y*z + 2*w*x
+  result[3][3] = 1 - 2*x*x - 2*y*y
+  return result
+end
+
+
+function calc_avg_leftCamBase(H, Hg, Hc)
+  local Q = torch.DoubleTensor(#Hg, 4)
+  local avg_pos = torch.zeros(3)
+  for i = 1,#Hg do
+    local leftCamPoseInBaseCoords = Hg[i] * H * Hc[i]
+    avg_pos = avg_pos + leftCamPoseInBaseCoords[{{1,3},{4}}]
+    local q = transformMatrixToQuaternion(leftCamPoseInBaseCoords[{{1,3},{1,3}}])
+    Q[i] = q
+  end
+  avg_pos = avg_pos / #Hg
+  local QtQ = Q:t() * Q
+  local e, V = torch.symeig(QtQ, 'V')
+  local maxEigenvalue, maxEig_index = torch.max(e,1)
+  local avg_q = V:t()[maxEig_index[1]]
+  local avg_rot = transformQuaternionToMatrix(avg_q)
+  local avg_LeftCamPose = torch.DoubleTensor(4,4)
+  avg_LeftCamPose[{{1,3},{1,3}}] = avg_rot
+  avg_LeftCamPose[{{1,3},{4}}] = avg_pos
+  avg_LeftCamPose[4][4] = 1.0
+  return avg_LeftCamPose
 end
 
 
@@ -443,20 +522,33 @@ function HandEye:calibrate(imgData)
     os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     return bestHESolution, patternBaseTrafo
   else
-    local cameraBaseTrafo = Hg[1] * bestHESolution * Hc[1]
+    local cameraBaseTrafo = calc_avg_leftCamBase(bestHESolution, Hg, Hc) --Hg[1] * bestHESolution * Hc[1]
     if imgData.jsposes.recorded_pose_of_reference ~= nil then
       local cameraRefFrameTrafo = torch.inverse(imgData.jsposes.recorded_pose_of_reference) * cameraBaseTrafo
-      print(string.format("%s -> camera trafo:", self.configuration.camera_reference_frame))
+      local rightCamRefFrameTrafo = cameraRefFrameTrafo * torch.inverse(self.rightLeftCamTrafo:double())
+      print(string.format("%s -> left camera trafo:", self.configuration.camera_reference_frame))
       if self.configuration.calibration_mode == "StereoRig" then
-        print("Note: For a stereo setup, this is the pose of the left camera with serial: "..self.configuration.cameras[self.configuration.left_camera_id].serial)
+        print("Note: This is the pose of the left camera with serial: "..self.configuration.cameras[self.configuration.left_camera_id].serial)
         print(string.format("      in %s coordinates.", self.configuration.camera_reference_frame))
       end
       print(cameraRefFrameTrafo)
+      print(string.format("%s -> right camera trafo:", self.configuration.camera_reference_frame))
+      if self.configuration.calibration_mode == "StereoRig" then
+        print("Note: This is the pose of the right camera with serial: "..self.configuration.cameras[self.configuration.right_camera_id].serial)
+        print(string.format("      in %s coordinates.", self.configuration.camera_reference_frame))
+      end
+      print(rightCamRefFrameTrafo)
       self.H_cam_to_refFrame = cameraRefFrameTrafo
       file_output_path = path.join(output_path, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
+      file_output_path_right = path.join(output_path, string.format('RightCam_%s.t7', self.configuration.camera_reference_frame))
       torch.save(file_output_path, cameraRefFrameTrafo)
+      torch.save(file_output_path_right, rightCamRefFrameTrafo)
       link_target = path.join('..', self.calibration_folder_name, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
       current_output_path = path.join(self.current_path, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
+      os.execute('rm -f ' .. current_output_path)
+      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+      link_target = path.join('..', self.calibration_folder_name, string.format('RightCam_%s.t7', self.configuration.camera_reference_frame))
+      current_output_path = path.join(self.current_path, string.format('RightCam_%s.t7', self.configuration.camera_reference_frame))
       os.execute('rm -f ' .. current_output_path)
       os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
       return bestHESolution, cameraRefFrameTrafo
@@ -846,9 +938,9 @@ function HandEye:publishHandEye()
       cam_refFrame_pose.stampedTransform:fromTensor(self.H_cam_to_refFrame)
       local link_name = string.gsub(self.configuration.camera_reference_frame, "joint", "link")
       cam_refFrame_pose:setFrame(link_name)
-      local ok, error = self.world_view_client:addPose(string.format("Cam_%s", link_name), '', cam_refFrame_pose)
+      local ok, error = self.world_view_client:addPose(string.format("Cam_%s", link_name), 'Calibration', cam_refFrame_pose)
       if not ok then
-        ok, error = self.world_view_client:updatePose(string.format("Cam_%s", link_name), '', cam_refFrame_pose)
+        ok, error = self.world_view_client:updatePose(string.format("Cam_%s", link_name), 'Calibration', cam_refFrame_pose)
         if not ok then
           print(error)
         end
@@ -860,7 +952,7 @@ function HandEye:publishHandEye()
         local cam2_to_refFrame_pose = datatypes.Pose()
         cam2_to_refFrame_pose.stampedTransform:fromTensor(cam2_to_refFrame)
         cam2_to_refFrame_pose:setFrame(link_name)
-        self.world_view_client:addPose(string.format("Cam2_%s", link_name),'', cam2_to_refFrame_pose)
+        self.world_view_client:addPose(string.format("Cam2_%s", link_name), 'Calibration', cam2_to_refFrame_pose)
       end
     end
   end
