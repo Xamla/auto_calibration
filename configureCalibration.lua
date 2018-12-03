@@ -19,7 +19,11 @@
 --]]
 
 local ros = require 'ros'
+local tf = ros.tf
+--local pcl = require 'pcl'
+local cv = require 'cv'
 local datatypes = require 'xamlamoveit.datatypes'
+local rosvita = require 'xamlamoveit.rosvita'
 local motionLibrary = require 'xamlamoveit.motionLibrary'
 local xutils = require 'xamlamoveit.xutils'
 local grippers = require 'xamlamoveit.grippers'
@@ -558,6 +562,832 @@ local function teachNewCapturePoses()
 end
 
 
+local function movePoseCollisionFree(end_effector, target_pose, seed)
+    local velocity_scaling = 0.1
+    local plan_parameters = end_effector.move_group:buildPlanParameters(velocity_scaling)
+    local seed = seed or end_effector.move_group:getCurrentJointValues()
+
+    local ik_ok, solution =
+        end_effector.motion_service:queryIK(
+        target_pose,
+        plan_parameters,
+        seed:select(end_effector.move_group:getJointNames()),
+        end_effector.link_name
+    )
+
+    if ik_ok[1].val ~= 1 then
+        print('Failed inverse kinematic call')
+        return false
+    end
+    local goal = datatypes.JointValues(seed.joint_set:clone(), solution[1].values)
+    -- plan trajectory
+    local ok, joint_trajectory, ex_plan_parameters =
+        end_effector.move_group:planMoveJointsCollisionFree(goal, velocity_scaling)
+    if ok then
+        -- Collision check is not necessary since moveIt will handle the planning?
+        -- -> see comment in Xamla/xamlamoveit/motionLibrary/MoveGroup.lua "moveJointsCollisionFree"
+        return end_effector.motion_service:executeJointTrajectory(joint_trajectory, true) -- true for collision check!!!
+    else
+        print('Could not find a path to the given joint values.')
+        return false
+    end
+end
+
+
+local function CalcPointPositions (arg)
+-- Calculate the "true" 3D position (x,y,z) of the circle centers of the circle pattern.
+-- z position is set to 0 for all points
+--
+-- Input params:
+  --  arg.pointsX  -- number of points in horizontal direction
+  --  arg.pointsY  -- number of points in vertical direction
+  --  arg.pointDistance -- distance between two points of the pattern in meter
+-- Return value:
+--    Position of the circle centers
+
+  local corners = torch.FloatTensor(arg.pointsX*arg.pointsY, 1, 3):zero()
+  local i=1
+  for y=1, arg.pointsY do
+    for x=1, arg.pointsX do
+      corners[i][1][1] = (2*(x-1) + (y-1)%2) * arg.pointDistance
+      corners[i][1][2] = (y-1)*arg.pointDistance
+      corners[i][1][3] = 0
+      i = i+1
+    end
+  end
+  return corners
+end
+
+
+local function normalize(v)
+   return v / torch.norm(v)
+end
+
+
+--- Calculates the TCP pose required to point the TCP z axis to point at with TCP at position eye
+-- eye becomes origin, 'at' lies on x-axis
+-- @param eye torch.Tensor(3,1); TCP position in x, y, z
+-- @param at torch.Tensor(3,1); Point to look at
+-- @param up torch.Tensor({0, 0, 1}); up direction of the camera
+-- @return torch.Tensor(4,4), robot pose
+local function PointAtPose(eye, at, up, handEye)
+  local zaxis = normalize(at - eye)
+  local xaxis = normalize(torch.cross(zaxis, up))
+  local yaxis = torch.cross(zaxis, xaxis)
+
+  local basis = torch.Tensor(3,3)
+  basis[{{},{1}}] = xaxis
+  basis[{{},{2}}] = yaxis
+  basis[{{},{3}}] = zaxis
+
+  local t = tf.Transform()
+  t:setBasis(basis)
+  t:setOrigin(eye)
+  local tcpLookat=t:toTensor():clone()
+
+  if handEye ~= nil then
+    tcpLookat = tcpLookat * torch.inverse(handEye)
+  end
+
+  return tcpLookat
+end
+
+
+function RotVectorToRotMatrix(vec)
+  -- transform a rotation vector as e.g. provided by solvePnP to a 3x3 rotation matrix using the Rodrigues' rotation formula
+  -- see e.g. http://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html#void%20Rodrigues%28InputArray%20src,%20OutputArray%20dst,%20OutputArray%20jacobian%29
+  --
+  -- Input parameters:
+  --   vec = vector to transform
+  -- Return value:
+  --   3x3 rotation matrix
+
+  local theta = torch.norm(vec)
+  local r = vec/theta
+  r = torch.squeeze(r)
+  local mat = torch.Tensor({{0, -1*r[3], r[2]}, {r[3], 0, -1*r[1]}, {-1*r[2], r[1], 0}})
+  r = r:resize(3,1)
+
+  local result = torch.eye(3)*math.cos(theta) + (r*r:t())*(1-math.cos(theta)) + mat*math.sin(theta)
+
+  return result
+end
+
+
+-- Input: hand-eye matrix, (left) camera matrix and (left) camera distortion
+local function captureSphereSampling_leftArm_onboardSetup()
+  print('How many? Enter the number of capture poses:')
+  local count = prompt:readNumber()
+  local min_radius = 0.4
+  local max_radius = 0.4
+  local target_jitter = 0.015
+
+  print("Enter filename of initial guess for hand-eye matrix (without quotation marks!)")
+  local heye_fn = prompt:readLine()
+  local heye = nil
+  if heye_fn ~= "" then
+    heye = torch.load(heye_fn)
+  else
+    heye = torch.DoubleTensor({
+      { -0.9865,   0.0610,   0.1517, -0.0406   },
+      { -0.0581,  -0.9980,   0.0235, -0.0682   },
+      {  0.1528,   0.0143,   0.9882,  0.1022   },
+      {  0.0000,   0.0000,   0.0000,  1.0000   }
+    })
+  end
+  print("Hand-eye matrix:")
+  print(heye)
+  print("Enter filename of initial guess for stereo calibration")
+  local stereoCalib_fn = prompt:readLine()
+  local intrinsics = nil
+  local distortion = nil
+  if stereoCalib_fn ~= "" then
+    stereoCalib = torch.load(stereoCalib_fn)
+    intrinsics = stereoCalib.camLeftMatrix:double()
+    distortion = stereoCalib.camLeftDistCoeffs:double()
+  else
+    intrinsics = torch.DoubleTensor({
+      {  4435.5590,     0.0000,  986.0854 },
+      {     0.0000,  4435.8500,  599.7553 },
+      {     0.0000,     0.0000,    1.0000 }
+    })
+    distortion = torch.DoubleTensor({-0.0214, 0.6362, 0.0, 0.0, 0.0})
+  end
+  print("Left camera matrix:")
+  print(intrinsics)
+  print("Left camera distortion:")
+  print(distortion)
+
+  local ok, centers = false, nil
+
+  local pos_list = {}
+  local file_names = {}
+  local recorded_joint_values = {}   -- joint values after getImage calls
+  local recorded_joint_tensors = {}  -- joint values as tensor after getImage calls
+  local recorded_poses = {}          -- end effector poses after getImage calls
+  local output_directory = path.join(configuration.output_directory, 'capture_shpere_sampling')
+  print('Deleting output directory')
+  os.execute('rm -rf '.. output_directory)
+  print('Creating output directory')
+  os.execute('mkdir -p ' .. output_directory)
+  local left_camera = configuration.cameras[configuration.left_camera_id]
+  local right_camera = configuration.cameras[configuration.right_camera_id]
+  local ee_names = move_group:getEndEffectorNames()
+  local ee = move_group:getEndEffector(ee_names[1])
+  local calibPattern = { width = 8, height = 21, pointDistance = 0.005 }
+
+  local overviewPose = move_group:getCurrentPose()
+  local check = false
+
+  while ros.ok() and not ok do
+
+    print("Please move robot to overview pose and press 'Enter' when ready.")
+    prompt:waitEnterOrEsc()
+    overviewPoseTensor = move_group:getCurrentPose():toTensor()
+    print("overviewPoseTensor:")
+    print(overviewPoseTensor)
+
+    -- TCP coordinate system is rotated 180° around y-axis of world coordinate system
+    -- to look down to the table (such that the z-axis of the tcp coordinate system points to the table)
+    --overviewPoseTensor[1] = torch.Tensor({-1.0,  0.0,  0.0,  move_group:getCurrentPose():toTensor()[1][4]})
+    --overviewPoseTensor[2] = torch.Tensor({ 0.0,  1.0,  0.0,  move_group:getCurrentPose():toTensor()[2][4]})
+    --overviewPoseTensor[3] = torch.Tensor({ 0.0,  0.0, -1.0,  move_group:getCurrentPose():toTensor()[3][4]})
+
+    -- capture images
+    local image_left
+    local image_right
+
+
+    if left_camera ~= nil then
+      if left_camera.sleep_before_capture > 0 then
+        printf('wait before capture %f s... ', left_camera.sleep_before_capture)
+        sys.sleep(left_camera.sleep_before_capture)
+      end
+      --camera_client:setExposure(left_camera.exposure, {left_camera.serial})
+      camera_client:setExposure(60000, {left_camera.serial})
+      image_left = camera_client:getImages({left_camera.serial})
+      if image_left:nDimension() > 2 then
+        image_left = cv.cvtColor{image_left, nil, cv.COLOR_RGB2BGR}
+      end
+    end
+    if right_camera ~= nil then
+      if right_camera.sleep_before_capture > 0 then
+        printf('wait before capture %f s... ', right_camera.sleep_before_capture)
+        sys.sleep(right_camera.sleep_before_capture)
+      end
+      --camera_client:setExposure(right_camera.exposure, {right_camera.serial})
+      camera_client:setExposure(60000, {right_camera.serial})
+      image_right = camera_client:getImages({right_camera.serial})
+      if image_right:nDimension() > 2 then
+        image_right = cv.cvtColor{image_right, nil, cv.COLOR_RGB2BGR}
+      end
+    end
+
+
+    -- load images for simulation
+    --image_left = cv.imread { "calibration/cam_4103130811_001.png" }
+    --image_right = cv.imread { "calibration/cam_4103189394_001.png" }
+
+    ok_left, centers_left = cv.findCirclesGrid{ image = image_left,
+                                                patternSize = { height = configuration.circle_pattern_geometry[1], width = configuration.circle_pattern_geometry[2] },
+                                                flags=cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING }
+    local ok_right = true -- if we do not have a right camera, ok_right should be true per default
+    if right_camera ~= nil then
+      ok_right, centers_right = cv.findCirclesGrid{ image = image_right,
+                                                    patternSize = { height = configuration.circle_pattern_geometry[1], width = configuration.circle_pattern_geometry[2] },
+                                                    flags=cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING }
+    end
+    ok = ok_left and ok_right
+    print("ok:")
+    print(ok)
+    if not ok then
+      print('WARNING! Calibration pattern not found. Please move the target into camera view!')
+    end
+  end
+
+
+  local circlePositions = CalcPointPositions{ pointsX = configuration.circle_pattern_geometry[2],
+                                              pointsY = configuration.circle_pattern_geometry[1],
+                                              pointDistance = configuration.circle_pattern_geometry[3] }
+  local poseFound, poseCamRotVector, poseCamTrans = cv.solvePnP{ objectPoints = circlePositions,
+                                                                 imagePoints = centers_left,
+                                                                 cameraMatrix = intrinsics,
+                                                                 distCoeffs = distortion }
+  if not poseFound then
+    error('could not calculate pose from calibration pattern')
+  end
+  print("poseCamRotVector:")
+  print(poseCamRotVector)
+  print("poseCamTrans:")
+  print(poseCamTrans)
+
+  local poseCamRotMatrix = RotVectorToRotMatrix(poseCamRotVector)
+  print("poseCamRotMatrix:")
+  print(poseCamRotMatrix)
+
+  -- assemble the 4x4 transformation matrix
+  local transfer = torch.eye(4)
+  transfer[{{1,3}, {1,3}}] = poseCamRotMatrix
+  transfer[{{1,3}, {4}}] = poseCamTrans
+  print("transfer:")
+  print(transfer)
+  local offset = torch.mv(transfer, torch.Tensor({0.04,0.05,0,0}))
+  transfer[{{},4}]:add(offset)
+  local t = overviewPoseTensor * heye * transfer
+  targetPoint = t[{{1,3},4}]
+  print('identified target point:')
+  print(targetPoint)
+  prompt:anyKey()
+
+  -- Once write all joint values to disk (e.g. to get the torso joint value of an SDA, etc.)
+  local mg_names = move_group.motion_service:queryAvailableMoveGroups()
+  local mg_all = move_group.motion_service:getMoveGroup(mg_names[1])
+  local joint_values_all = mg_all:getCurrentJointValues()
+  local all_vals_fn1 = path.join(output_directory, "all_vals.t7")
+  local all_vals_fn2 = path.join(output_directory, "all_vals_tensors.t7")
+  torch.save(all_vals_fn1, joint_values_all)
+  torch.save(all_vals_fn2, joint_values_all.values)
+
+  -- Preparation of saving joint values and poses to disk after each move
+  local jsposes = {}
+  jsposes.recorded_joint_values = {}
+  jsposes.recorded_poses = {}
+  local jsposes_tensors = {}
+  jsposes_tensors.recorded_joint_values = {}
+  jsposes_tensors.recorded_poses = {}
+  local poses_fn1 = path.join(output_directory, "jsposes.t7")
+  local poses_fn2 = path.join(output_directory, "jsposes_tensors.t7")
+
+  -- Loop over all #count many poses, the user wants to sample
+  local up = torch.DoubleTensor({0,0, 1})
+  local cnt = 1
+  local enough = false
+  while not enough do
+
+    -- generate random point in positive half shere
+    local origin
+    while true do
+      origin = torch.randn(3) -- 1D Tensor of size 3 filled with random numbers
+                              -- from a normal distribution with mean zero and variance one.
+      origin[3] = math.max(0.01, math.abs(origin[3])) -- z-component has to be positive
+      origin:div(origin:norm()) -- normalization
+      if origin[3] > 0.8 then -- z-component has to be > 0.8
+        break
+      end
+    end
+    print("origin:")
+    print(origin)
+
+    -- Lets express the position we want to look at relative to our pattern.
+    -- The targets z-axis goes into the table so we have a negative z-value w.r.t. the pattern.
+    origin:mul(torch.lerp(min_radius, max_radius, math.random())) -- = minRadius + random in [0,1) * (maxRadius-minRadius)
+    -- ==> Each point has to lie on a sphere with radius between minRadius and maxRadius!
+    print("origin:")
+    print(origin)
+
+    origin:add(targetPoint)
+    print("origin:")
+    print(origin)
+
+    local target = targetPoint + math.random() * target_jitter - 0.5 * target_jitter
+
+    local up_ = up
+
+    up_ = t[{1,{1,3}}] -- use pattern x axis in world
+
+    if math.random(2) == 1 then
+      up_ = -up_
+    end
+    print("up_:")
+    print(up_)
+
+    local movePoseTensor = PointAtPose(origin, target, up_, heye)
+    print("movePoseTensor:")
+    print(movePoseTensor)
+
+    local movePose = datatypes.Pose()
+    movePose.stampedTransform:fromTensor(movePoseTensor)
+    movePose:setFrame("world")
+    print("movePose:")
+    print(movePose)
+
+    -- move to movePose and search calibration pattern
+    print("current pose:")
+    print(move_group:getCurrentPose())
+    printf('Moveing to movePose #%d ...', cnt)
+    check = movePoseCollisionFree(ee, movePose)
+    print("check:")
+    print(check)
+
+    if check then
+      sys.sleep(0.5)
+
+      prompt:anyKey()
+
+      -- Save joint values for image capturing:
+      local q = move_group:getCurrentJointValues()
+      pos_list[cnt] = q
+      printf("Joint configuration #%d:", cnt)
+      print(q)
+
+      local p = move_group:getCurrentPose()
+
+      recorded_joint_values[#recorded_joint_values+1] = q
+      recorded_joint_tensors[#recorded_joint_tensors+1] = q.values
+      recorded_poses[#recorded_poses+1] = p:toTensor()
+
+      -- Write table of joint values and poses to disk after each move,
+      -- so that they are not lost if the robot has to be stopped by emergency.
+      jsposes.recorded_joint_values[cnt] = recorded_joint_values[cnt]
+      jsposes.recorded_poses[cnt] = recorded_poses[cnt]
+      jsposes_tensors.recorded_joint_values[cnt] = recorded_joint_tensors[cnt]
+      jsposes_tensors.recorded_poses[cnt] = recorded_poses[cnt]
+      print("jsposes:")
+      print(jsposes)
+      print("jsposes_tensors:")
+      print(jsposes_tensors)
+      print(string.format('Saving poses files to: %s and %s.', poses_fn1, poses_fn2))
+      torch.save(poses_fn1, jsposes)
+      torch.save(poses_fn2, jsposes_tensors)
+
+
+      -- Capture images and save joint values and poses:
+      if left_camera ~= nil then
+        --camera_client:setExposure(left_camera.exposure, {left_camera.serial})
+        camera_client:setExposure(60000, {left_camera.serial})
+        local image = camera_client:getImages({left_camera.serial})
+        if image:nDimension() > 2 then
+          image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
+        end
+        -- write image to disk
+        local fn = path.join(output_directory, string.format('cam_%s_%03d.png', left_camera.serial, cnt))
+        printf("Writing image: %s", fn)
+        local ok_write = cv.imwrite{fn, image}
+        assert(ok_write, 'Could not write image.')
+        file_names[#file_names+1] = fn
+      end
+      if right_camera ~= nil then
+        --camera_client:setExposure(right_camera.exposure, {right_camera.serial})
+        camera_client:setExposure(60000, {right_camera.serial})
+        local image = camera_client:getImages({right_camera.serial})
+        if image:nDimension() > 2 then
+          image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
+        end
+        -- write image to disk
+        local fn = path.join(output_directory, string.format('cam_%s_%03d.png', right_camera.serial, cnt))
+        printf("Writing image: %s", fn)
+        local ok_write = cv.imwrite{fn, image}
+        assert(ok_write, 'Could not write image.')
+        file_names[#file_names+1] = fn
+      end
+      collectgarbage()
+
+
+      cnt = cnt + 1
+      if cnt > count then
+        enough = true
+      end
+    end
+  end
+
+  configuration.capture_poses = pos_list
+end
+
+
+-- Input: hand-pattern matrix, (left) camera matrix, (left) camera distortion and trafoLeftToRightCam
+local function captureSphereSampling_rightArm_externSetup()
+  print('How many? Enter the number of capture poses:')
+  local count = prompt:readNumber()
+
+  local world_view_client = rosvita.WorldViewClient.new(motion_service.node_handle)
+
+  print("Enter filename of initial guess for hand-pattern matrix (without quotation marks!)")
+  local hand_pattern_fn = prompt:readLine()
+  local hand_pattern = nil
+  if hand_pattern_fn ~= "" then
+    hand_pattern = torch.load(hand_pattern_fn)
+  else
+    hand_pattern = torch.DoubleTensor({
+      {  0.0059,   0.9997,  -0.0256, -0.0271   },
+      { -0.0008,   0.0256,   0.9997, -0.0894   },
+      {  1.0000,  -0.0059,   0.0010,  0.0214   },
+      {  0.0000,   0.0000,   0.0000,  1.0000   }
+    })
+  end
+  print("Hand-pattern matrix:")
+  print(hand_pattern)
+  print("Enter filename of initial guess for stereo calibration")
+  local stereoCalib_fn = prompt:readLine()
+  local trafoLeftToRightCam = nil
+  if stereoCalib_fn ~= "" then
+    stereoCalib = torch.load(stereoCalib_fn)
+    trafoLeftToRightCam = stereoCalib.trafoLeftToRightCam:double()
+  else
+    trafoLeftToRightCam = torch.DoubleTensor({
+      {  0.9660,  -0.0412,  -0.2551,  0.1886   },
+      {  0.0428,   0.9991,   0.0005,  0.0037   },
+      {  0.2549,  -0.0114,   0.9669,  0.0268   },
+      {  0.0000,   0.0000,   0.0000,  1.0000   }
+    })
+  end
+  print("Left to right camera transformation:")
+  print(trafoLeftToRightCam)
+  print("Enter filename of initial guess for transformation from torso to left camera")
+  local leftCam_torso_fn = prompt:readLine()
+  local leftCam_torso = nil
+  if leftCam_torso_fn ~= "" then
+    leftCam_torso = torch.load(leftCam_torso_fn)
+  else
+    leftCam_torso = torch.DoubleTensor({
+      {  0.1028,   0.7777,   0.6202,  0.2321   },
+      {  0.9910,  -0.0265,  -0.1311,  0.0951   },
+      { -0.0855,   0.6281,  -0.7734,  0.4490   },
+      {  0.0000,   0.0000,   0.0000,  1.0000   }
+    })
+  end
+  print("Torso to left camera transformation:")
+  print(leftCam_torso)
+  -- Publish "hand_pattern" in WorldView
+  local hand_pattern_pose = datatypes.Pose()
+  hand_pattern_pose.stampedTransform:fromTensor(hand_pattern)
+  hand_pattern_pose:setFrame('arm_right_link_tool0')
+  world_view_client:addPose("hand_pattern_guess", 'Calibration', hand_pattern_pose)
+
+  local ok, centers = false, nil
+
+  local pos_list = {}
+  local file_names = {}
+  local recorded_joint_values = {}   -- joint values after getImage calls
+  local recorded_joint_tensors = {}  -- joint values as tensor after getImage calls
+  local recorded_poses = {}          -- end effector poses after getImage calls
+  local output_directory = path.join(configuration.output_directory, 'capture_shpere_sampling')
+  print('Deleting output directory')
+  os.execute('rm -rf '.. output_directory)
+  print('Creating output directory')
+  os.execute('mkdir -p ' .. output_directory)
+  local left_camera = configuration.cameras[configuration.left_camera_id]
+  local right_camera = configuration.cameras[configuration.right_camera_id]
+  local ee_names = move_group:getEndEffectorNames()
+  local ee = move_group:getEndEffector(ee_names[1])
+  local calibPattern = { width = 8, height = 21, pointDistance = 0.005 }
+
+  -- Get current pose of left and right torso camera in world coordinates, as well as the pose between them:
+  local err_code, torso_joint_b1_base, err_msg = motion_service:queryPose(move_group:getName(), move_group:getCurrentJointValues(), "torso_link_b1")
+  local torsoPoseMsg = torso_joint_b1_base.pose
+  local torsoTransform = tf.Transform() -- create tf.Transform from torsoPoseMsg
+  torsoTransform:setOrigin({ torsoPoseMsg.position.x, torsoPoseMsg.position.y, torsoPoseMsg.position.z })
+  torsoTransform:setRotation(tf.Quaternion(torsoPoseMsg.orientation.x, torsoPoseMsg.orientation.y, torsoPoseMsg.orientation.z, torsoPoseMsg.orientation.w))
+  local torso_base = torsoTransform:toTensor()
+  local leftCam_base = torso_base * leftCam_torso
+  print("leftCam_base:")
+  print(leftCam_base)
+  local rightCam_base = leftCam_base * torch.inverse(trafoLeftToRightCam)
+  print("rightCam_base:")
+  print(rightCam_base)
+  -- Publish camera poses in WorldView
+  local leftCam_base_pose = datatypes.Pose()
+  local rightCam_base_pose = datatypes.Pose()
+  leftCam_base_pose.stampedTransform:fromTensor(leftCam_base)
+  rightCam_base_pose.stampedTransform:fromTensor(rightCam_base)
+  leftCam_base_pose:setFrame('world')
+  rightCam_base_pose:setFrame('world')
+  world_view_client:addPose("leftCam_base", 'Calibration', leftCam_base_pose)
+  world_view_client:addPose("rightCam_base", 'Calibration', rightCam_base_pose)
+  --Interpolate translation
+  local one = tf.Transform()
+  local one_pos = leftCam_base_pose:toStampedPoseMsg().pose.position
+  local one_rot = leftCam_base_pose:toStampedPoseMsg().pose.orientation
+  one:setOrigin({ one_pos.x, one_pos.y, one_pos.z })
+  one:setRotation(tf.Quaternion(one_rot.x, one_rot.y, one_rot.z, one_rot.w))
+  local two = tf.Transform()
+  local two_pos = rightCam_base_pose:toStampedPoseMsg().pose.position
+  local two_rot = rightCam_base_pose:toStampedPoseMsg().pose.orientation
+  two:setOrigin({ two_pos.x, two_pos.y, two_pos.z })
+  two:setRotation(tf.Quaternion(two_rot.x, two_rot.y, two_rot.z, two_rot.w))
+  local between = tf.Transform()
+  between:setRotation(one:getRotation():slerp(two:getRotation(), 0.5))
+  between:setOrigin({ one_pos.x+0.5*(two_pos.x-one_pos.x), one_pos.y+0.5*(two_pos.y-one_pos.y), one_pos.z+0.5*(two_pos.z-one_pos.z) })
+  print("Pose between leftCam and rightCam:")
+  print(between:toTensor())
+  -- Publish pose between cameras in WorldView
+  local between_pose = datatypes.Pose()
+  between_pose.stampedTransform:fromTensor(between:toTensor())
+  between_pose:setFrame('world')
+  world_view_client:addPose("betweenCams_base", 'Calibration', between_pose)
+
+  local overviewPose = move_group:getCurrentPose()
+  local check = false
+
+  while ros.ok() and not ok do
+
+    print("Please move robot to overview pose and press 'Enter' when ready.")
+    prompt:waitEnterOrEsc()
+    overviewPoseTensor = move_group:getCurrentPose():toTensor()
+    print("overviewPoseTensor:")
+    print(overviewPoseTensor)
+
+    -- capture images
+    local image_left
+    local image_right
+
+
+    if left_camera ~= nil then
+      if left_camera.sleep_before_capture > 0 then
+        printf('wait before capture %f s... ', left_camera.sleep_before_capture)
+        sys.sleep(left_camera.sleep_before_capture)
+      end
+      --camera_client:setExposure(left_camera.exposure, {left_camera.serial})
+      camera_client:setExposure(80000, {left_camera.serial})
+      image_left = camera_client:getImages({left_camera.serial})
+      --print("ok1")
+      if image_left:nDimension() > 2 then
+        image_left = cv.cvtColor{image_left, nil, cv.COLOR_RGB2BGR}
+      end
+      --print("ok2")
+      -- write image to disk
+      local fn_startImg = path.join(output_directory, string.format('cam_%s_start.png', left_camera.serial))
+      printf("Writing image: %s", fn_startImg)
+      local ok_write_start = cv.imwrite{fn_startImg, image_left}
+      assert(ok_write_start, 'Could not write startimage.')
+      --print("ok3")
+    end
+    if right_camera ~= nil then
+      if right_camera.sleep_before_capture > 0 then
+        printf('wait before capture %f s... ', right_camera.sleep_before_capture)
+        sys.sleep(right_camera.sleep_before_capture)
+      end
+      --camera_client:setExposure(right_camera.exposure, {right_camera.serial})
+      camera_client:setExposure(80000, {right_camera.serial})
+      image_right = camera_client:getImages({right_camera.serial})
+      if image_right:nDimension() > 2 then
+        image_right = cv.cvtColor{image_right, nil, cv.COLOR_RGB2BGR}
+      end
+      -- write image to disk
+      fn_startImg = path.join(output_directory, string.format('cam_%s_start.png', right_camera.serial))
+      printf("Writing image: %s", fn_startImg)
+      ok_write_start = cv.imwrite{fn_startImg, image_right}
+      assert(ok_write_start, 'Could not write startimage.')
+    end
+
+
+    -- load images for simulation
+    --image_left = cv.imread { "calibration/cam_CAMAU1639042_start.png" }
+    --image_right = cv.imread { "calibration/cam_CAMAU1710001_start.png" }
+
+    ok_left, centers_left = cv.findCirclesGrid{ image = image_left,
+                                                patternSize = { height = configuration.circle_pattern_geometry[1], width = configuration.circle_pattern_geometry[2] },
+                                                flags=cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING }
+    local ok_right = true -- if we do not have a right camera, ok_right should be true per default
+    if right_camera ~= nil then
+      ok_right, centers_right = cv.findCirclesGrid{ image = image_right,
+                                                    patternSize = { height = configuration.circle_pattern_geometry[1], width = configuration.circle_pattern_geometry[2] },
+                                                    flags=cv.CALIB_CB_ASYMMETRIC_GRID + cv.CALIB_CB_CLUSTERING }
+    end
+    ok = ok_left and ok_right
+    print("ok:")
+    print(ok)
+    if not ok then
+      print('WARNING! Calibration pattern not found. Please move the target into camera view!')
+    end
+  end
+
+  local t = between:toTensor():clone()
+  print("t = pose between left and right cam:")
+  print(t)
+  targetPoint = t[{{1,3},4}]
+  print('identified target point:')
+  print(targetPoint)
+  prompt:anyKey()
+
+  -- Once write all joint values to disk (e.g. to get the torso joint value of an SDA, etc.)
+  local mg_names = move_group.motion_service:queryAvailableMoveGroups()
+  local mg_all = move_group.motion_service:getMoveGroup(mg_names[1])
+  local joint_values_all = mg_all:getCurrentJointValues()
+  local all_vals_fn1 = path.join(output_directory, "all_vals.t7")
+  local all_vals_fn2 = path.join(output_directory, "all_vals_tensors.t7")
+  torch.save(all_vals_fn1, joint_values_all)
+  torch.save(all_vals_fn2, joint_values_all.values)
+
+  -- Preparation of saving joint values and poses to disk after each move
+  local jsposes = {}
+  jsposes.recorded_joint_values = {}
+  jsposes.recorded_poses = {}
+  local jsposes_tensors = {}
+  jsposes_tensors.recorded_joint_values = {}
+  jsposes_tensors.recorded_poses = {}
+  local poses_fn1 = path.join(output_directory, "jsposes.t7")
+  local poses_fn2 = path.join(output_directory, "jsposes_tensors.t7")
+
+  -- Loop over all #count many poses, the user wants to sample
+  local cnt = 1
+  local enough = false
+  local origin = torch.DoubleTensor(3)
+  local start_origin
+  local radius
+  local radius_jitter = 0.05
+  while not enough do
+
+    -- generate random point in a part of the half sphere in front of the cameras
+
+    if cnt == 1 then -- take start position of pattern as origin
+      local world_pattern = move_group:getCurrentPose():toTensor() * hand_pattern
+      print("world_pattern:")
+      print(world_pattern)
+      origin[1] = world_pattern[1][4] -- 0.12655776739120483
+      origin[2] = world_pattern[2][4] -- 0.51348876953125
+      origin[3] = world_pattern[3][4] -- 1.0787900686264038
+      start_origin = origin
+      print("start pattern-origin:")
+      print(start_origin)
+      print("Distance of current pattern pose (origin) from camera-interpolation-pose (target):")
+      radius = torch.norm(targetPoint - origin)
+      print(radius)
+    else
+      -- generate a random position as origin with correct distance from target
+      -- and only slight angle difference from start
+      while true do
+        origin = start_origin:clone()
+        origin[1] = origin[1] + math.random()*0.01
+        origin[2] = origin[2] + math.random()*0.01
+        origin[3] = origin[3] + math.random()*0.01
+        if torch.norm(origin - start_origin) < 0.02 then
+          print("new pattern-origin:")
+          print(origin)
+          break
+        end
+      end
+    end
+
+    local movePoseTensor = torch.eye(4)
+    movePoseTensor[1][4] = origin[1]
+    movePoseTensor[2][4] = origin[2]
+    movePoseTensor[3][4] = origin[3]
+    movePoseTensor[{{1,3},{1,3}}] = overviewPoseTensor[{{1,3},{1,3}}]
+    -- movePoseTensor is still in pattern coordinates and does not have the correct rotation, yet.
+
+    -- Lets express the position we want to look at relative to our camera.
+    -- The z-axis of the pattern has to point away from the camera.
+    current_tcp_pose = move_group:getCurrentPose():toTensor()
+    pattern_pose_in_world = current_tcp_pose * hand_pattern
+    pattern_xaxis = pattern_pose_in_world[{{1,3},1}]
+    zaxis = normalize(targetPoint - origin)
+    zaxis = -1.0 * zaxis
+    yaxis = normalize(torch.cross(zaxis, pattern_xaxis))
+    xaxis = normalize(torch.cross(yaxis, zaxis))
+    local basis = torch.Tensor(3,3)
+    basis[{{},{1}}] = xaxis
+    basis[{{},{2}}] = yaxis
+    basis[{{},{3}}] = zaxis
+    local t = tf.Transform()
+    t:setBasis(basis)
+    t:setOrigin(origin)
+    movePoseTensor = t:toTensor():clone()
+    movePoseTensor = movePoseTensor * torch.inverse(hand_pattern)
+
+    print("movePoseTensor (with correct rotation and in TCP-coordinates):")
+    print(movePoseTensor)
+
+    local movePose = datatypes.Pose()
+    movePose.stampedTransform:fromTensor(movePoseTensor)
+    movePose:setFrame("world")
+
+    -- move to movePose and search calibration pattern
+    printf('Moveing to movePose #%d ...', cnt)
+
+    local seed = ee.move_group:getCurrentJointValues()
+    if cnt % 2 == 0 then
+      print("cnt for random seed:", cnt)
+      seed.values = torch.randn(7) -- 1D Tensor of size 7 filled with random numbers in ]-1,+1[
+    end
+    check = movePoseCollisionFree(ee, movePose, seed)
+    print("check:")
+    print(check)
+
+    if check then
+      sys.sleep(0.5)
+
+      prompt:anyKey()
+
+      -- Save joint values for image capturing:
+      local q = move_group:getCurrentJointValues()
+      pos_list[cnt] = q
+      printf("Joint configuration #%d:", cnt)
+      print(q)
+
+      local p = move_group:getCurrentPose()
+
+      recorded_joint_values[#recorded_joint_values+1] = q
+      recorded_joint_tensors[#recorded_joint_tensors+1] = q.values
+      recorded_poses[#recorded_poses+1] = p:toTensor()
+
+      -- Write table of joint values and poses to disk after each move,
+      -- so that they are not lost if the robot has to be stopped by emergency.
+      jsposes.recorded_joint_values[cnt] = recorded_joint_values[cnt]
+      jsposes.recorded_poses[cnt] = recorded_poses[cnt]
+      jsposes_tensors.recorded_joint_values[cnt] = recorded_joint_tensors[cnt]
+      jsposes_tensors.recorded_poses[cnt] = recorded_poses[cnt]
+      print("jsposes:")
+      print(jsposes)
+      print("jsposes_tensors:")
+      print(jsposes_tensors)
+      print(string.format('Saving poses files to: %s and %s.', poses_fn1, poses_fn2))
+      torch.save(poses_fn1, jsposes)
+      torch.save(poses_fn2, jsposes_tensors)
+
+
+      -- Capture images and save joint values and poses:
+      if left_camera ~= nil then
+        --camera_client:setExposure(left_camera.exposure, {left_camera.serial})
+        camera_client:setExposure(80000, {left_camera.serial})
+        local image = camera_client:getImages({left_camera.serial})
+        if image:nDimension() > 2 then
+          image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
+        end
+        -- write image to disk
+        local fn = path.join(output_directory, string.format('cam_%s_%03d.png', left_camera.serial, cnt))
+        printf("Writing image: %s", fn)
+        local ok_write = cv.imwrite{fn, image}
+        assert(ok_write, 'Could not write image.')
+        file_names[#file_names+1] = fn
+      end
+      if right_camera ~= nil then
+        --camera_client:setExposure(right_camera.exposure, {right_camera.serial})
+        camera_client:setExposure(80000, {right_camera.serial})
+        local image = camera_client:getImages({right_camera.serial})
+        if image:nDimension() > 2 then
+          image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
+        end
+        -- write image to disk
+        local fn = path.join(output_directory, string.format('cam_%s_%03d.png', right_camera.serial, cnt))
+        printf("Writing image: %s", fn)
+        local ok_write = cv.imwrite{fn, image}
+        assert(ok_write, 'Could not write image.')
+        file_names[#file_names+1] = fn
+      end
+      collectgarbage()
+
+
+      cnt = cnt + 1
+      if cnt > count then
+        enough = true
+      end
+    end
+  end
+
+  configuration.capture_poses = pos_list
+end
+
+
+local function captureSphereSampling()
+  local menu_options = {
+    { 'l', 'left arm, onboard camera setup', captureSphereSampling_leftArm_onboardSetup },
+    { 'r', 'right arm, extern camera setup (on torso)', captureSphereSampling_rightArm_externSetup }
+  }
+  menu_options[#menu_options + 1] = { 'ESC', 'Return to main menu...', false }
+  prompt:showMenu('Capture Sphere Sampling', menu_options)
+end
+
+
 local function editExistingCapturePoses()
   editPoseList(configuration.capture_poses)
 end
@@ -878,6 +1708,7 @@ local function showMainMenu()
       { '7', string.format('Set velocity scaling (%f)', configuration.velocity_scaling), setVelocityScaling },
       { '8', 'Actuator menu', showActuatorMenu },
       { '9', 'Dump configuration', dumpConfiguration },
+      { 'a', string.format('Generate capture poses via sphere sampling (%d defined)', #configuration.capture_poses), captureSphereSampling },
       { 'g', string.format('Gripper selection (%s)', configuration.gripper_key) , selectGripper },
       { 'e', string.format('Teach poses for evaluation (%d defined)', #configuration.eval_poses), teachEvalPoses },
       { 'd', string.format('Debug output setting (%s)', configuration.debug_output),  setDebugOutput },
@@ -890,6 +1721,8 @@ end
 
 
 local function main()
+  prompt:enableRawTerminal()
+
   prompt:printXamlaBanner()
   print(' AutoCalibration v.0 Configuration\n\n')
 
@@ -982,9 +1815,14 @@ local function init()
   sp:start()
 
   prompt = xutils.Prompt()
-  prompt:enableRawTerminal()
-  ok, err = pcall(function() main() end)
-  prompt:restoreTerminalAttributes()
+  local terminal_attributes = xutils.saveTerminalAttributes()
+  ok, err = xpcall(main, debug.traceback)
+  xutils.restoreTerminalAttributes(terminal_attributes)
+
+  --prompt = xutils.Prompt()
+  --prompt:enableRawTerminal()
+  --ok, err = pcall(function() main() end)
+  --prompt:restoreTerminalAttributes()
 
   if not ok then
     print(err)
