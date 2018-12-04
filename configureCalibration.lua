@@ -697,6 +697,7 @@ local function captureSphereSampling_leftArm_onboardSetup()
   end
   print("Hand-eye matrix:")
   print(heye)
+  print("Note: If hand-eye matrix is for tcp at last joint of robot arm (instead of tcp at gripper tip), then the tcp in the project configuration has to be set accordingly before starting the sphere sampling!")
   print("Enter filename of initial guess for stereo calibration")
   local stereoCalib_fn = prompt:readLine()
   local intrinsics = nil
@@ -1016,6 +1017,7 @@ local function captureSphereSampling_rightArm_externSetup()
   end
   print("Hand-pattern matrix:")
   print(hand_pattern)
+  print("Note: If hand-pattern matrix is for tcp at last joint of robot arm (instead of tcp at gripper tip), then the tcp in the project configuration has to be set accordingly before starting the sphere sampling!")
   print("Enter filename of initial guess for stereo calibration")
   local stereoCalib_fn = prompt:readLine()
   local trafoLeftToRightCam = nil
