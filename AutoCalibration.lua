@@ -1200,6 +1200,8 @@ function AutoCalibration:exportStereot7AsXmlFiles(path_stereo_calib)
     },
     {xml = 'FrameWidth', stereocalib.imWidth},
     {xml = 'FrameHeight', stereocalib.imHeight},
+    {xml = 'left_camera_id', self.configuration.left_camera_id},
+    {xml = 'right_camera_id', self.configuration.right_camera_id},
   }
 
   print("")
