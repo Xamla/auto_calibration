@@ -674,8 +674,83 @@ function RotVectorToRotMatrix(vec)
 end
 
 
+local function transformMatrixToQuaternion(rot)
+  local sqrt = math.sqrt
+  local trace = rot[1][1] + rot[2][2] + rot[3][3]
+  local _next = { 2, 3, 1 }
+  local q = torch.zeros(4)
+  if trace > 0 then
+    local r = sqrt(trace + 1)
+    local s = 0.5 / r
+    q[1] = 0.5 * r
+    q[2] = (rot[3][2] - rot[2][3]) * s
+    q[3] = (rot[1][3] - rot[3][1]) * s
+    q[4] = (rot[2][1] - rot[1][2]) * s
+  else
+    local i = 1
+    if rot[2][2] > rot[1][1] then
+      i = 2
+    end
+    if rot[3][3] > rot[i][i] then
+      i = 3
+    end
+    local j = _next[i]
+    local k = _next[j]
+    local t = rot[i][i] - rot[j][j] - rot[k][k] + 1
+    local r = sqrt(t)
+    local s = 0.5 / sqrt(t)
+    local w = (rot[k][j] - rot[j][k]) * s
+    q[1] = w
+    q[i+1] = 0.5 * r
+    q[j+1] = (rot[j][i] + rot[i][j]) * s
+    q[k+1] = (rot[k][i] + rot[i][k]) * s
+  end
+  return q/q:norm()
+end
+
+
+local function transformQuaternionToMatrix(q)
+  local w = q[1]
+  local x = q[2]
+  local y = q[3]
+  local z = q[4]
+  local result = torch.DoubleTensor(3,3)
+  result[1][1] = 1 - 2*y*y - 2*z*z
+  result[1][2] = 2*x*y - 2*w*z
+  result[1][3] = 2*x*z + 2*w*y
+  result[2][1] = 2*x*y + 2*w*z
+  result[2][2] = 1 - 2*x*x - 2*z*z
+  result[2][3] = 2*y*z - 2*w*x
+  result[3][1] = 2*x*z - 2*w*y
+  result[3][2] = 2*y*z + 2*w*x
+  result[3][3] = 1 - 2*x*x - 2*y*y
+  return result
+end
+
+
+local function calc_avg_heye(H1, H2)
+  local Q = torch.DoubleTensor(2, 4)
+  local avg_pos = torch.zeros(3)
+
+  avg_pos = (H1[{{1,3},{4}}] + H2[{{1,3},{4}}]) / 2.0
+  Q[1] = transformMatrixToQuaternion(H1[{{1,3},{1,3}}])
+  Q[2] = transformMatrixToQuaternion(H2[{{1,3},{1,3}}])
+
+  local QtQ = Q:t() * Q
+  local e, V = torch.symeig(QtQ, 'V')
+  local maxEigenvalue, maxEig_index = torch.max(e,1)
+  local avg_q = V:t()[maxEig_index[1]]
+  local avg_rot = transformQuaternionToMatrix(avg_q)
+  local avg_H = torch.DoubleTensor(4,4)
+  avg_H[{{1,3},{1,3}}] = avg_rot
+  avg_H[{{1,3},{4}}] = avg_pos
+  avg_H[4][4] = 1.0
+  return avg_H
+end
+
+
 -- Input: hand-eye matrix, (left) camera matrix and (left) camera distortion
-local function captureSphereSampling_leftArm_onboardSetup()
+local function captureSphereSampling_endOfArmCams()
   print('How many? Enter the number of capture poses:')
   local count = prompt:readNumber()
   local min_radius = 0.4
@@ -688,12 +763,8 @@ local function captureSphereSampling_leftArm_onboardSetup()
   if heye_fn ~= "" then
     heye = torch.load(heye_fn)
   else
-    heye = torch.DoubleTensor({
-      { -0.9865,   0.0610,   0.1517, -0.0406   },
-      { -0.0581,  -0.9980,   0.0235, -0.0682   },
-      {  0.1528,   0.0143,   0.9882,  0.1022   },
-      {  0.0000,   0.0000,   0.0000,  1.0000   }
-    })
+    print("Hand-Eye-Matrix not found!")
+    return nil
   end
   print("Hand-eye matrix:")
   print(heye)
@@ -702,22 +773,29 @@ local function captureSphereSampling_leftArm_onboardSetup()
   local stereoCalib_fn = prompt:readLine()
   local intrinsics = nil
   local distortion = nil
+  local interCamTrafo = nil
   if stereoCalib_fn ~= "" then
     stereoCalib = torch.load(stereoCalib_fn)
     intrinsics = stereoCalib.camLeftMatrix:double()
     distortion = stereoCalib.camLeftDistCoeffs:double()
+    interCamTrafo = stereoCalib.trafoLeftToRightCam:double()
   else
-    intrinsics = torch.DoubleTensor({
-      {  4435.5590,     0.0000,  986.0854 },
-      {     0.0000,  4435.8500,  599.7553 },
-      {     0.0000,     0.0000,    1.0000 }
-    })
-    distortion = torch.DoubleTensor({-0.0214, 0.6362, 0.0, 0.0, 0.0})
+    print("Stereocalibration not found!")
+    return nil
   end
   print("Left camera matrix:")
   print(intrinsics)
   print("Left camera distortion:")
   print(distortion)
+  print("Transformation between cameras:")
+  print(interCamTrafo)
+
+  local heye_2 = heye * torch.inverse(interCamTrafo)
+  print("Hand-eye matrix of right camera:")
+  print(heye_2)
+  local avg_heye = calc_avg_heye(heye, heye_2)
+  print("average hand-eye:")
+  print(avg_heye)
 
   local ok, centers = false, nil
 
@@ -996,7 +1074,7 @@ end
 
 
 -- Input: hand-pattern matrix, (left) camera matrix, (left) camera distortion and trafoLeftToRightCam
-local function captureSphereSampling_rightArm_externSetup()
+local function captureSphereSampling_torsoCams()
   print('How many? Enter the number of capture poses:')
   local count = prompt:readNumber()
 
@@ -1382,8 +1460,8 @@ end
 
 local function captureSphereSampling()
   local menu_options = {
-    { 'l', 'left arm, onboard camera setup', captureSphereSampling_leftArm_onboardSetup },
-    { 'r', 'right arm, extern camera setup (on torso)', captureSphereSampling_rightArm_externSetup }
+    { 'e', 'end-of-arm camera setup', captureSphereSampling_endOfArmCams },
+    { 't', 'torso camera setup', captureSphereSampling_torsoCams }
   }
   menu_options[#menu_options + 1] = { 'ESC', 'Return to main menu...', false }
   prompt:showMenu('Capture Sphere Sampling', menu_options)
