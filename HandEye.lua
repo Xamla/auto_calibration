@@ -386,7 +386,7 @@ function HandEye:calibrate(imgData)
     end
     if self.configuration.debug_output then
       imgShowLeft = cv.resize {imgShowLeft, {imgShowLeft:size(2) * 0.5, imgShowLeft:size(1) * 0.5}}
-      imgShowRight = cv.resize {imgShowLeft, {imgShowRight:size(2) * 0.5, imgShowRight:size(1) * 0.5}}
+      imgShowRight = cv.resize {imgShowRight, {imgShowRight:size(2) * 0.5, imgShowRight:size(1) * 0.5}}
       cv.imshow {"Pattern distribution (left cam)", imgShowLeft}
       cv.waitKey {5000}
       cv.imshow {"Pattern distribution (right cam)", imgShowRight}
