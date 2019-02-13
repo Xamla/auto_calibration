@@ -305,6 +305,47 @@ function calc_avg_leftCamBase(H, Hg, Hc)
 end
 
 
+function MatrixToQuaternion(rot)
+  local sqrt = math.sqrt
+  local trace = rot[1][1] + rot[2][2] + rot[3][3]
+  local _next = { 2, 3, 1 }
+  local q = torch.zeros(4)
+  if trace > 0 then
+    local r = sqrt(trace + 1)
+    local s = 0.5 / r
+    q[1] = 0.5 * r
+    q[2] = (rot[3][2] - rot[2][3]) * s
+    q[3] = (rot[1][3] - rot[3][1]) * s
+    q[4] = (rot[2][1] - rot[1][2]) * s
+  else
+    local i = 1
+    if rot[2][2] > rot[1][1] then
+      i = 2
+    end
+    if rot[3][3] > rot[i][i] then
+      i = 3
+    end
+    local j = _next[i]
+    local k = _next[j]
+    local t = rot[i][i] - rot[j][j] - rot[k][k] + 1
+    local r = sqrt(t)
+    local s = 0.5 / sqrt(t)
+    local w = (rot[k][j] - rot[j][k]) * s
+    q[1] = w
+    q[i+1] = 0.5 * r
+    q[j+1] = (rot[j][i] + rot[i][j]) * s
+    q[k+1] = (rot[k][i] + rot[i][k]) * s
+  end
+  return q/q:norm()
+end
+
+
+-- calculate magnitude of rotation angle [in radians]; range: [0,pi]
+function distanceQ6(q1,q2)
+  return 2.0 * math.acos(math.abs(q1[1]*q2[1] + q1[2]*q2[2] + q1[3]*q2[3] + q1[4]*q2[4]))
+end
+
+
 -- Note: This hand-eye calibration can only be used with a stereo camera setup!
 -- params: imgData = {imgDataLeft = {imagePaths= {}}, imgDataRight = {imagePaths= {}}}
 -- output: Returns the transformation camera_to_tcp or pattern_to_tcp, depending on if we have
@@ -430,23 +471,9 @@ function HandEye:calibrate(imgData)
     end
   end
 
-  -- H = pose of the pattern/camera in TCP coordinate frame
-  -- 'extern' camera setup: pattern pose in tcp coordinates
-  -- 'onboard' camera setup: camera pose in tcp coordinates
-  local H, res, res_angle = calib.calibrate(Hg, Hc)
-
-  if self.configuration.camera_location_mode == 'onboard' then
-    print("Temporary Hand-Eye matrix:") -- TCP <-> Camera
-    print(H)
-  else
-    print("Temporary Hand-Pattern matrix:") -- TCP <-> Pattern
-    print(H)
-  end
-  print("#Hc:")
-  print(#Hc)
-  print("#imagesTakenForHandPatternCalib:")
+  print("#images that might be taken for Hand-Eye/Pattern calib:")
   print(#imagesTakenForHandPatternCalib)
-  print("imagesTakenForHandPatternCalib:")
+  print("images that might be taken for Hand-Eye/Pattern calib:")
   print(imagesTakenForHandPatternCalib)
 
   local file_output_path = path.join(output_path, 'imagesTakenForHandPatternCalib.t7')
@@ -455,6 +482,119 @@ function HandEye:calibrate(imgData)
   local current_output_path = path.join(self.current_path, 'imagesTakenForHandPatternCalib.t7')
   os.execute('rm -f ' .. current_output_path)
   os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+
+
+  -- H = pose of the pattern/camera in TCP coordinate frame
+  -- 'extern' camera setup: pattern pose in tcp coordinates
+  -- 'onboard' camera setup: camera pose in tcp coordinates
+
+  -- First take only first "start_size" many samples to create an initial guess of the hand-eye calibration.
+  local start_size = 5
+  local Hg_init = {}
+  local Hc_init = {}
+  for i=1,start_size do
+    table.insert(Hc_init, Hc[i])
+    table.insert(Hg_init, Hg[i])
+  end
+  print('#Hg_init='..#Hg_init..' #Hc_init='..#Hc_init)
+  local H_init, res_init, res_angle_init = calib.calibrate(Hg_init, Hc_init)
+  if self.configuration.camera_location_mode == 'onboard' then
+    print("Initial Hand-Eye matrix:") -- TCP <-> Camera
+    print(H_init)
+  else
+    print("Initial Hand-Pattern matrix:") -- TCP <-> Pattern
+    print(H_init)
+  end
+  --print("Residuals:")
+  --print(res_init)
+  --print(res_angle_init)
+
+  -- Then repeatedly take the next "block_size" many samples to improve the hand-eye calibration.
+  -- Note: The next sample-set is only taken into account, if the resulting hand-eye-matrix does not change too much.
+  --       Thus, outliers are automatically removed.
+  local block_size = 1
+  local number_of_runs = math.floor(#Hc/block_size)
+  local rest = #Hc % block_size
+  print("Number of runs (containing initial run):")
+  print(number_of_runs)
+  print("Rest (number of remaining samples):")
+  print(rest)
+  local rot_thres = 10.0 * M_PI / 180.0 -- 10°
+  local trans_thres = 0.01 -- 1cm
+  local Hc_next = {table.unpack(Hc_init)}
+  local Hg_next = {table.unpack(Hg_init)}
+  local H_next = H_init:clone()
+  local H_next_q = MatrixToQuaternion(H_next[{{1,3},{1,3}}])
+  if number_of_runs > 1 then
+    for i = 1, number_of_runs-1 do
+      local Hc_next_backup = {table.unpack(Hc_next)}
+      local Hg_next_backup = {table.unpack(Hg_next)}
+      local H_next_backup = H_next:clone()
+      local H_next_q_backup = H_next_q:clone()
+      for j = 1,block_size do
+        table.insert(Hc_next, Hc[start_size+(i-1)*block_size+j])
+        table.insert(Hg_next, Hg[start_size+(i-1)*block_size+j])
+      end
+      print('#Hg_next='..#Hg_next..' #Hc_next='..#Hc_next)
+      local H_next, res_next, res_angle_next = calib.calibrate(Hg_next, Hc_next)
+      if self.configuration.camera_location_mode == 'onboard' then
+        print("Next possible Hand-Eye matrix:")
+      else
+        print("Next possible Hand-Pattern matrix:")
+      end
+      print(H_next)
+      -- Check if hand-eye does not change too much (-> outlier removal)
+      local H_next_q = MatrixToQuaternion(H_next[{{1,3},{1,3}}])
+      local rotation_difference = distanceQ6(H_next_q_backup, H_next_q)
+      print("Rotation difference [in degree]: ", (rotation_difference * 180.0/M_PI))
+      local translation_difference = (H_next_backup[{{1,3},{4}}] - H_next[{{1,3},{4}}]):norm()
+      print("Translation difference [in m]: ", translation_difference)
+      if rotation_difference < rot_thres and translation_difference < trans_thres then
+        print("Successful refinement step.")
+      else
+        print("Unsuccessful refinement step -> take backup.")
+        Hc_next = {table.unpack(Hc_next_backup)}
+        Hg_next = {table.unpack(Hg_next_backup)}
+        H_next = H_next_backup:clone()
+        H_next_q = H_next_q_backup:clone()
+      end
+    end
+  end
+
+  local Hc_next_backup = {table.unpack(Hc_next)}
+  local Hg_next_backup = {table.unpack(Hg_next)}
+  local H_next_backup = H_next:clone()
+  local H_next_q_backup = H_next_q:clone()
+  for i = 1,rest do
+    table.insert(Hc_next, Hc[#Hc-rest+i])
+    table.insert(Hg_next, Hg[#Hg-rest+i])
+  end
+  print('#Hg_next='..#Hg_next..' #Hc_next='..#Hc_next)
+  local H_next, res_next, res_angle_next = calib.calibrate(Hg_next, Hc_next)
+  if self.configuration.camera_location_mode == 'onboard' then
+    print("Next possible Hand-Eye matrix:")
+  else
+    print("Next possible Hand-Pattern matrix:")
+  end
+  print(H_next)
+  local H_next_q = MatrixToQuaternion(H_next[{{1,3},{1,3}}])
+  local rotation_difference = distanceQ6(H_next_q_backup, H_next_q)
+  print("Rotation difference [in degree]: ", (rotation_difference * 180.0/M_PI))
+  local translation_difference = (H_next_backup[{{1,3},{4}}] - H_next[{{1,3},{4}}]):norm()
+  print("Translation difference [in m]: ", translation_difference)
+  if rotation_difference < rot_thres and translation_difference < trans_thres then
+    print("Successful refinement step.")
+  else
+    print("Unsuccessful refinement step -> take backup.")
+    Hc_next = {table.unpack(Hc_next_backup)}
+    Hg_next = {table.unpack(Hg_next_backup)}
+    H_next = H_next_backup:clone()
+    H_next_q = H_next_q_backup:clone()
+  end
+
+  Hc = {table.unpack(Hc_next)}
+  Hg = {table.unpack(Hg_next)}
+  H = H_next:clone()
 
   -- perform cross validation
   local bestHESolution, alignmentErrorTest, alignmentError = calib.calibrateViaCrossValidation(Hg, Hc, #Hg-2, 5)
