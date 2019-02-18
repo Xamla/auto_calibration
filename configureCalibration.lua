@@ -275,6 +275,8 @@ local function editPoseList(pos_list)
     if last_q == nil then
       return nil -- abort
     end
+    torch.save(filename, configuration)
+    printf("Configuration automatically saved to file '%s'.", filename)
   end
 
   print('How many additional poses? Enter the number of additional poses to teach:')
