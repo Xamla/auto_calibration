@@ -877,9 +877,9 @@ function HandEye:publishHandEye()
     local hand_eye_pose = datatypes.Pose()
     hand_eye_pose.stampedTransform:fromTensor(self.H_camera_to_tcp)
     hand_eye_pose:setFrame(self.tcp_frame_of_reference)
-    local ok, error = self.world_view_client:addPose("HandEye",'', hand_eye_pose)
+    local ok, error = self.world_view_client:addPose("HandEye", '/Calibration', hand_eye_pose)
     if not ok then
-      ok, error = self.world_view_client:updatePose("HandEye", '', hand_eye_pose)
+      ok, error = self.world_view_client:updatePose("HandEye", '/Calibration', hand_eye_pose)
       if not ok then
         print(error)
       end
@@ -891,7 +891,7 @@ function HandEye:publishHandEye()
       local hand_eye_pose_2 = datatypes.Pose()
       hand_eye_pose_2.stampedTransform:fromTensor(hand_eye_2)
       hand_eye_pose_2:setFrame(self.tcp_frame_of_reference)
-      self.world_view_client:addPose("HandEye_Cam2",'', hand_eye_pose_2)
+      self.world_view_client:addPose("HandEye_Cam2", '/Calibration', hand_eye_pose_2)
     end
   elseif self.configuration.camera_location_mode == 'extern' then
     print("Extern camera setup!")
@@ -908,9 +908,9 @@ function HandEye:publishHandEye()
       local cam_base_pose = datatypes.Pose()
       cam_base_pose.stampedTransform:fromTensor(self.H_cam_to_base)
       cam_base_pose:setFrame('world')
-      local ok, error = self.world_view_client:addPose("CamBase", '', cam_base_pose)
+      local ok, error = self.world_view_client:addPose("CamBase", '/Calibration', cam_base_pose)
       if not ok then
-        ok, error = self.world_view_client:updatePose("CamBase", '', cam_base_pose)
+        ok, error = self.world_view_client:updatePose("CamBase", '/Calibration', cam_base_pose)
         if not ok then
           print(error)
         end
@@ -922,7 +922,7 @@ function HandEye:publishHandEye()
         local cam2_to_base_pose = datatypes.Pose()
         cam2_to_base_pose.stampedTransform:fromTensor(cam2_to_base)
         cam2_to_base_pose:setFrame('world')
-        self.world_view_client:addPose("Cam2Base",'', cam2_to_base_pose)
+        self.world_view_client:addPose("Cam2Base", '/Calibration', cam2_to_base_pose)
       end
     else
       if self.H_cam_to_refFrame == nil then
@@ -938,9 +938,9 @@ function HandEye:publishHandEye()
       cam_refFrame_pose.stampedTransform:fromTensor(self.H_cam_to_refFrame)
       local link_name = string.gsub(self.configuration.camera_reference_frame, "joint", "link")
       cam_refFrame_pose:setFrame(link_name)
-      local ok, error = self.world_view_client:addPose(string.format("Cam_%s", link_name), 'Calibration', cam_refFrame_pose)
+      local ok, error = self.world_view_client:addPose(string.format("Cam_%s", link_name), '/Calibration', cam_refFrame_pose)
       if not ok then
-        ok, error = self.world_view_client:updatePose(string.format("Cam_%s", link_name), 'Calibration', cam_refFrame_pose)
+        ok, error = self.world_view_client:updatePose(string.format("Cam_%s", link_name), '/Calibration', cam_refFrame_pose)
         if not ok then
           print(error)
         end
@@ -952,7 +952,7 @@ function HandEye:publishHandEye()
         local cam2_to_refFrame_pose = datatypes.Pose()
         cam2_to_refFrame_pose.stampedTransform:fromTensor(cam2_to_refFrame)
         cam2_to_refFrame_pose:setFrame(link_name)
-        self.world_view_client:addPose(string.format("Cam2_%s", link_name), 'Calibration', cam2_to_refFrame_pose)
+        self.world_view_client:addPose(string.format("Cam2_%s", link_name), '/Calibration', cam2_to_refFrame_pose)
       end
     end
   end
