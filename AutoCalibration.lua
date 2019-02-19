@@ -360,9 +360,20 @@ end
 function AutoCalibration:runCaptureSequenceWithoutCapture()
   local pos_list = self.configuration.capture_poses
   assert(pos_list ~= nil and #pos_list > 0)
+  local recorded_joint_values = {}   -- joint values
+  local recorded_poses = {}          -- end effector poses
   for i,p in ipairs(pos_list) do
     moveJ(self, p)
+    sys.sleep(1)
+    -- get joint values and pose
+    local joint_values = self.move_group:getCurrentJointValues()
+    local pose = self.move_group:getCurrentPose()
+    recorded_joint_values[#recorded_joint_values+1] = joint_values
+    recorded_poses[#recorded_poses+1] = pose:toTensor()
   end
+  self.recorded_joint_values = recorded_joint_values
+  self.recorded_poses = recorded_poses
+  self:savePoses()
 end
 
 
