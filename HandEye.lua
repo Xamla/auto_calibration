@@ -375,24 +375,24 @@ function HandEye:calibrate(imgData)
         table.insert(Hg, robotPose)
         table.insert(imagesTakenForHandPatternCalib, i)
 
-        if self.configuration.debug_output then
-          if i < #self.pattern_localizer.colorTab then
-            color = self.pattern_localizer.colorTab[i]
-          end
-          imgShowLeft = printPatternPoints(circlesGridPointsLeft, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShowLeft)
-          imgShowRight = printPatternPoints(circlesGridPointsRight, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShowRight)
+        --if self.configuration.debug_output then
+        if i < #self.pattern_localizer.colorTab then
+          color = self.pattern_localizer.colorTab[i]
         end
+        imgShowLeft = printPatternPoints(circlesGridPointsLeft, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShowLeft)
+        imgShowRight = printPatternPoints(circlesGridPointsRight, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShowRight)
+        --end
       end
     end
-    if self.configuration.debug_output then
-      imgShowLeft = cv.resize {imgShowLeft, {imgShowLeft:size(2) * 0.5, imgShowLeft:size(1) * 0.5}}
-      imgShowRight = cv.resize {imgShowRight, {imgShowRight:size(2) * 0.5, imgShowRight:size(1) * 0.5}}
-      cv.imshow {"Pattern distribution (left cam)", imgShowLeft}
-      cv.waitKey {5000}
-      cv.imshow {"Pattern distribution (right cam)", imgShowRight}
-      cv.waitKey {5000}
-      cv.destroyAllWindows {}
-    end
+    --if self.configuration.debug_output then
+    imgShowLeft = cv.resize {imgShowLeft, {imgShowLeft:size(2) * 0.5, imgShowLeft:size(1) * 0.5}}
+    imgShowRight = cv.resize {imgShowRight, {imgShowRight:size(2) * 0.5, imgShowRight:size(1) * 0.5}}
+    cv.imshow {"Pattern distribution (left cam)", imgShowLeft}
+    cv.waitKey {3000}
+    cv.imshow {"Pattern distribution (right cam)", imgShowRight}
+    cv.waitKey {3000}
+    cv.destroyAllWindows {}
+    --end
   elseif mode == CalibrationMode.SingleCamera then
     local imgGetSize = cv.imread {imgDataSingle.imagePaths[1]}
     local imgShow = torch.ByteTensor(imgGetSize:size(1), imgGetSize:size(2), 3)
@@ -414,20 +414,20 @@ function HandEye:calibrate(imgData)
         table.insert(Hg, robotPose)
         table.insert(imagesTakenForHandPatternCalib, i)
         
-        if self.configuration.debug_output then
-          if i < #self.pattern_localizer.colorTab then
-            color = self.pattern_localizer.colorTab[i]
-          end
-          imgShow = printPatternPoints(points3d, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShow)
+        --if self.configuration.debug_output then
+        if i < #self.pattern_localizer.colorTab then
+          color = self.pattern_localizer.colorTab[i]
         end
+        imgShow = printPatternPoints(points3d, self.pattern_localizer.pattern.height, self.pattern_localizer.pattern.width, color, imgShow)
+        --end
       end
     end
-    if self.configuration.debug_output then
-      imgShow = cv.resize {imgShow, {imgShow:size(2) * 0.5, imgShow:size(1) * 0.5}}
-      cv.imshow {"Pattern distribution", imgShow}
-      cv.waitKey {5000}
-      cv.destroyAllWindows {}
-    end
+    --if self.configuration.debug_output then
+    imgShow = cv.resize {imgShow, {imgShow:size(2) * 0.5, imgShow:size(1) * 0.5}}
+    cv.imshow {"Pattern distribution", imgShow}
+    cv.waitKey {3000}
+    cv.destroyAllWindows {}
+    --end
   end
 
   -- H = pose of the pattern/camera in TCP coordinate frame
@@ -877,10 +877,11 @@ function HandEye:publishHandEye()
     local hand_eye_pose = datatypes.Pose()
     hand_eye_pose.stampedTransform:fromTensor(self.H_camera_to_tcp)
     hand_eye_pose:setFrame(self.tcp_frame_of_reference)
-    local ok, error = self.world_view_client:addPose("HandEye", '/Calibration', hand_eye_pose)
+    local ok, error = self.world_view_client:addPose("hand_eye_left_cam", '/Calibration', hand_eye_pose)
     if not ok then
-      ok, error = self.world_view_client:updatePose("HandEye", '/Calibration', hand_eye_pose)
+      ok, error = self.world_view_client:updatePose("hand_eye_left_cam", '/Calibration', hand_eye_pose)
       if not ok then
+        print("Could not publish hand_eye_left_cam!")
         print(error)
       end
     end
@@ -891,7 +892,14 @@ function HandEye:publishHandEye()
       local hand_eye_pose_2 = datatypes.Pose()
       hand_eye_pose_2.stampedTransform:fromTensor(hand_eye_2)
       hand_eye_pose_2:setFrame(self.tcp_frame_of_reference)
-      self.world_view_client:addPose("HandEye_Cam2", '/Calibration', hand_eye_pose_2)
+      local ok2, error2 = self.world_view_client:addPose("hand_eye_right_cam", '/Calibration', hand_eye_pose_2)
+      if not ok2 then
+        ok2, error2 = self.world_view_client:updatePose("hand_eye_right_cam", '/Calibration', hand_eye_pose_2)
+        if not ok2 then
+          print("Could not publish hand_eye_right_cam!")
+          print(error2)
+        end
+      end
     end
   elseif self.configuration.camera_location_mode == 'extern' then
     print("Extern camera setup!")
@@ -908,10 +916,11 @@ function HandEye:publishHandEye()
       local cam_base_pose = datatypes.Pose()
       cam_base_pose.stampedTransform:fromTensor(self.H_cam_to_base)
       cam_base_pose:setFrame('world')
-      local ok, error = self.world_view_client:addPose("CamBase", '/Calibration', cam_base_pose)
+      local ok, error = self.world_view_client:addPose("left_cam_base", '/Calibration', cam_base_pose)
       if not ok then
-        ok, error = self.world_view_client:updatePose("CamBase", '/Calibration', cam_base_pose)
+        ok, error = self.world_view_client:updatePose("left_cam_base", '/Calibration', cam_base_pose)
         if not ok then
+          print("Could not publish left_cam_base!")
           print(error)
         end
       end
@@ -922,7 +931,14 @@ function HandEye:publishHandEye()
         local cam2_to_base_pose = datatypes.Pose()
         cam2_to_base_pose.stampedTransform:fromTensor(cam2_to_base)
         cam2_to_base_pose:setFrame('world')
-        self.world_view_client:addPose("Cam2Base", '/Calibration', cam2_to_base_pose)
+        local ok2, error2 = self.world_view_client:addPose("right_cam_base", '/Calibration', cam2_to_base_pose)
+        if not ok2 then
+          ok2, error2 = self.world_view_client:updatePose("right_cam_base", '/Calibration', cam2_to_base_pose)
+          if not ok2 then
+            print("Could not publish right_cam_base!")
+            print(error2)
+          end
+        end
       end
     else
       if self.H_cam_to_refFrame == nil then
@@ -938,10 +954,11 @@ function HandEye:publishHandEye()
       cam_refFrame_pose.stampedTransform:fromTensor(self.H_cam_to_refFrame)
       local link_name = string.gsub(self.configuration.camera_reference_frame, "joint", "link")
       cam_refFrame_pose:setFrame(link_name)
-      local ok, error = self.world_view_client:addPose(string.format("Cam_%s", link_name), '/Calibration', cam_refFrame_pose)
+      local ok, error = self.world_view_client:addPose(string.format("left_cam_%s", link_name), '/Calibration', cam_refFrame_pose)
       if not ok then
-        ok, error = self.world_view_client:updatePose(string.format("Cam_%s", link_name), '/Calibration', cam_refFrame_pose)
+        ok, error = self.world_view_client:updatePose(string.format("left_cam_%s", link_name), '/Calibration', cam_refFrame_pose)
         if not ok then
+          print(string.format("Could not publish left_cam_%s!", link_name))
           print(error)
         end
       end
@@ -952,7 +969,14 @@ function HandEye:publishHandEye()
         local cam2_to_refFrame_pose = datatypes.Pose()
         cam2_to_refFrame_pose.stampedTransform:fromTensor(cam2_to_refFrame)
         cam2_to_refFrame_pose:setFrame(link_name)
-        self.world_view_client:addPose(string.format("Cam2_%s", link_name), '/Calibration', cam2_to_refFrame_pose)
+        local ok2, error2 = self.world_view_client:addPose(string.format("right_cam_%s", link_name), '/Calibration', cam2_to_refFrame_pose)
+        if not ok2 then
+          ok2, error2 = self.world_view_client:updatePose(string.format("right_cam_%s", link_name), '/Calibration', cam2_to_refFrame_pose)
+          if not ok2 then
+            print(string.format("Could not publish right_cam_%s!", link_name))
+            print(error2)
+          end
+        end
       end
     end
   end
