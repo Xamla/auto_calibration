@@ -756,7 +756,7 @@ local function captureSphereSampling_endOfArmCams()
   print('How many? Enter the number of capture poses:')
   local count = prompt:readNumber()
   local min_radius = 0.4
-  local max_radius = 0.5
+  local max_radius = 0.6
   local target_jitter = 0.015
 
   print("Enter filename of initial guess for hand-eye matrix (without quotation marks!)")
