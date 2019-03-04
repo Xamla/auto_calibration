@@ -504,6 +504,16 @@ local function validateConfiguration()
 end
 
 
+local function table_contains(table, element)
+  for _, value in pairs(table) do
+    if value == element then
+      return true
+    end
+  end
+  return false
+end
+
+
 local function main(nh)
   -- parse command line
   local cmd = torch.CmdLine()
@@ -545,6 +555,13 @@ local function main(nh)
     return
   end
 
+  move_group_names = motion_service:queryAvailableMoveGroups()
+  if not table_contains(move_group_names, configuration.move_group_name) then
+    print(string.format("%s is no available move group!", configuration.move_group_name))
+    print("Please choose one of the available move groups.")
+    local choice = prompt:chooseFromList(move_group_names, 'Available move groups:')
+    configuration.move_group_name = choice
+  end
   local move_group = motion_service:getMoveGroup(configuration.move_group_name)
   move_group:setVelocityScaling(configuration.velocity_scaling)
   printf('Set velocity scaling: %f', configuration.velocity_scaling)
