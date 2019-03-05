@@ -815,7 +815,6 @@ local function captureSphereSampling_endOfArmCams()
   local right_camera = configuration.cameras[configuration.right_camera_id]
   local ee_names = move_group:getEndEffectorNames()
   local ee = move_group:getEndEffector(ee_names[1])
-  local calibPattern = { width = 8, height = 21, pointDistance = 0.005 }
 
   local overviewPose = move_group:getCurrentPose()
   local check = false
@@ -844,8 +843,7 @@ local function captureSphereSampling_endOfArmCams()
         printf('wait before capture %f s... ', left_camera.sleep_before_capture)
         sys.sleep(left_camera.sleep_before_capture)
       end
-      --camera_client:setExposure(left_camera.exposure, {left_camera.serial})
-      camera_client:setExposure(120000, {left_camera.serial})
+      camera_client:setExposure(left_camera.exposure, {left_camera.serial})
       image_left = camera_client:getImages({left_camera.serial})
       if image_left:nDimension() > 2 then
         image_left = cv.cvtColor{image_left, nil, cv.COLOR_RGB2BGR}
@@ -856,8 +854,7 @@ local function captureSphereSampling_endOfArmCams()
         printf('wait before capture %f s... ', right_camera.sleep_before_capture)
         sys.sleep(right_camera.sleep_before_capture)
       end
-      --camera_client:setExposure(right_camera.exposure, {right_camera.serial})
-      camera_client:setExposure(120000, {right_camera.serial})
+      camera_client:setExposure(right_camera.exposure, {right_camera.serial})
       image_right = camera_client:getImages({right_camera.serial})
       if image_right:nDimension() > 2 then
         image_right = cv.cvtColor{image_right, nil, cv.COLOR_RGB2BGR}
@@ -1010,8 +1007,7 @@ local function captureSphereSampling_endOfArmCams()
 
             -- Capture images and save joint values and poses:
       if left_camera ~= nil then
-        --camera_client:setExposure(left_camera.exposure, {left_camera.serial})
-        camera_client:setExposure(120000, {left_camera.serial})
+        camera_client:setExposure(left_camera.exposure, {left_camera.serial})
         local image = camera_client:getImages({left_camera.serial})
         if image:nDimension() > 2 then
           image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
@@ -1024,8 +1020,7 @@ local function captureSphereSampling_endOfArmCams()
         file_names[#file_names+1] = fn
       end
       if right_camera ~= nil then
-        --camera_client:setExposure(right_camera.exposure, {right_camera.serial})
-        camera_client:setExposure(120000, {right_camera.serial})
+        camera_client:setExposure(right_camera.exposure, {right_camera.serial})
         local image = camera_client:getImages({right_camera.serial})
         if image:nDimension() > 2 then
           image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
@@ -1152,7 +1147,6 @@ local function captureSphereSampling_torsoCams()
   local right_camera = configuration.cameras[configuration.right_camera_id]
   local ee_names = move_group:getEndEffectorNames()
   local ee = move_group:getEndEffector(ee_names[1])
-  local calibPattern = { width = 8, height = 21, pointDistance = 0.005 }
 
   -- Get current pose of left and right torso camera in world coordinates, as well as the pose between them:
   local err_code, torso_joint_b1_base, err_msg = motion_service:queryPose(move_group:getName(), move_group:getCurrentJointValues(), "torso_link_b1")
@@ -1219,8 +1213,7 @@ local function captureSphereSampling_torsoCams()
         printf('wait before capture %f s... ', left_camera.sleep_before_capture)
         sys.sleep(left_camera.sleep_before_capture)
       end
-      --camera_client:setExposure(left_camera.exposure, {left_camera.serial})
-      camera_client:setExposure(80000, {left_camera.serial})
+      camera_client:setExposure(left_camera.exposure, {left_camera.serial})
       image_left = camera_client:getImages({left_camera.serial})
       --print("ok1")
       if image_left:nDimension() > 2 then
@@ -1239,8 +1232,7 @@ local function captureSphereSampling_torsoCams()
         printf('wait before capture %f s... ', right_camera.sleep_before_capture)
         sys.sleep(right_camera.sleep_before_capture)
       end
-      --camera_client:setExposure(right_camera.exposure, {right_camera.serial})
-      camera_client:setExposure(80000, {right_camera.serial})
+      camera_client:setExposure(right_camera.exposure, {right_camera.serial})
       image_right = camera_client:getImages({right_camera.serial})
       if image_right:nDimension() > 2 then
         image_right = cv.cvtColor{image_right, nil, cv.COLOR_RGB2BGR}
@@ -1420,8 +1412,7 @@ local function captureSphereSampling_torsoCams()
 
       -- Capture images and save joint values and poses:
       if left_camera ~= nil then
-        --camera_client:setExposure(left_camera.exposure, {left_camera.serial})
-        camera_client:setExposure(80000, {left_camera.serial})
+        camera_client:setExposure(left_camera.exposure, {left_camera.serial})
         local image = camera_client:getImages({left_camera.serial})
         if image:nDimension() > 2 then
           image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
@@ -1434,8 +1425,7 @@ local function captureSphereSampling_torsoCams()
         file_names[#file_names+1] = fn
       end
       if right_camera ~= nil then
-        --camera_client:setExposure(right_camera.exposure, {right_camera.serial})
-        camera_client:setExposure(80000, {right_camera.serial})
+        camera_client:setExposure(right_camera.exposure, {right_camera.serial})
         local image = camera_client:getImages({right_camera.serial})
         if image:nDimension() > 2 then
           image = cv.cvtColor{image, nil, cv.COLOR_RGB2BGR}
