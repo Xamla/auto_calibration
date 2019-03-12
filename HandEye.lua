@@ -305,11 +305,109 @@ function calc_avg_leftCamBase(H, Hg, Hc)
 end
 
 
+-- calculate magnitude of rotation angle [in radians]; range: [0,pi]
+function distanceQ6(q1,q2)
+  return 2.0 * math.acos(math.abs(q1[1]*q2[1] + q1[2]*q2[2] + q1[3]*q2[3] + q1[4]*q2[4]))
+end
+
+
+-- RANSAC outlier removal for hand-eye calibration:
+function ransac_hand_eye(Hc, Hg, min_samples, max_trials, rot_thres, trans_thres)
+  local min_samples = min_samples or 5
+  local max_trials = max_trials or 10
+  local rot_thres = rot_thres or (1.0 * M_PI / 180.0) -- 1°
+  local trans_thres = trans_thres or 0.001 -- 1mm
+  local t = torch.Tensor(min_samples)
+  local best_hand_eye = torch.eye(4)
+  local best_idx_inliers = {}
+  local best_Hc_inliers = {}
+  local best_Hg_inliers = {}
+  local best_inlier_num = 0
+
+  for i = 1, max_trials do
+    local idx_inliers = {}
+    local Hc_inliers = {}
+    local Hg_inliers = {}
+    -- First take only "min_samples" many, randomly chosen samples to create
+    -- an initial guess of the hand-eye calibration.
+    t:random(1, #Hg) -- min_samples many random numbers from 1 to #Hg
+    print("Indices of randomly chosen initial set:")
+    print(t)
+    local Hg_init = {}
+    local Hc_init = {}
+    for j = 1, min_samples do
+      table.insert(Hc_init, Hc[ t[j] ])
+      table.insert(Hg_init, Hg[ t[j] ])
+    end
+    --print('#Hg_init='..#Hg_init..' #Hc_init='..#Hc_init)
+    local H_init, _, _ = calib.calibrate(Hg_init, Hc_init)
+    print("Initial H:")
+    print(H_init)
+    -- Then repeatedly take the next sample to improve the hand-eye calibration.
+    -- Note: The next sample is only taken into account, if the resulting hand-eye-matrix does not change too much.
+    --       Thus, outliers are automatically removed.
+    local Hc_next = {table.unpack(Hc_init)}
+    local Hg_next = {table.unpack(Hg_init)}
+    local H_next = H_init:clone()
+    local H_next_q = transformMatrixToQuaternion(H_next[{{1,3},{1,3}}])
+    for j = 1, #Hc do
+      local Hc_next_backup = {table.unpack(Hc_next)}
+      local Hg_next_backup = {table.unpack(Hg_next)}
+      local H_next_backup = H_next:clone()
+      local H_next_q_backup = H_next_q:clone()
+      table.insert(Hc_next, Hc[j])
+      table.insert(Hg_next, Hg[j])
+      --print('#Hg_next='..#Hg_next..' #Hc_next='..#Hc_next)
+      local H_next, _, _ = calib.calibrate(Hg_next, Hc_next)
+      -- Check if hand-eye does not change too much (-> outlier removal)
+      local H_next_q = transformMatrixToQuaternion(H_next[{{1,3},{1,3}}])
+      local rotation_difference = distanceQ6(H_next_q_backup, H_next_q)
+      --print("Rotation difference [in degree]: ", (rotation_difference * 180.0/M_PI))
+      local translation_difference = (H_next_backup[{{1,3},{4}}] - H_next[{{1,3},{4}}]):norm()
+      --print("Translation difference [in m]: ", translation_difference)
+      if rotation_difference < rot_thres and translation_difference < trans_thres then
+        --print("Successful refinement step.")
+        table.insert(idx_inliers, j)
+      else
+        --print("Unsuccessful refinement step -> take backup.")
+        Hc_next = {table.unpack(Hc_next_backup)}
+        Hg_next = {table.unpack(Hg_next_backup)}
+        H_next = H_next_backup:clone()
+        H_next_q = H_next_q_backup:clone()
+      end
+    end
+    if #idx_inliers > best_inlier_num then -- the initial sample set with the largest number of inliers is chosen
+      best_inlier_num = #idx_inliers
+      best_idx_inliers = idx_inliers
+      best_Hc_inliers = {table.unpack(Hc_next)}
+      best_Hg_inliers = {table.unpack(Hg_next)}
+      best_hand_eye = H_next:clone()
+    end
+    print("******************************")
+    print("Currently best_inlier_num:")
+    print(best_inlier_num)
+    print("Currently best_hand_eye:")
+    print(best_hand_eye)
+    print("******************************")
+  end
+
+  print("******************************")
+  print("Final best_inlier_num:")
+  print(best_inlier_num)
+  print("Final best_hand_eye:")
+  print(best_hand_eye)
+  print("******************************")
+  return best_Hc_inliers, best_Hg_inliers, best_hand_eye
+end
+
+
 -- Note: This hand-eye calibration can only be used with a stereo camera setup!
 -- params: imgData = {imgDataLeft = {imagePaths= {}}, imgDataRight = {imagePaths= {}}}
 -- output: Returns the transformation camera_to_tcp or pattern_to_tcp, depending on if we have
 --         an 'onboard' camera setup or an 'extern' camera setup
-function HandEye:calibrate(imgData)
+function HandEye:calibrate(imgData, ransac_outlier_removal)
+
+  ransac_outlier_removal = ransac_outlier_removal or false
 
   --first load the latest calibration file
   local mode = self.configuration.calibration_mode
@@ -433,21 +531,26 @@ function HandEye:calibrate(imgData)
   -- H = pose of the pattern/camera in TCP coordinate frame
   -- 'extern' camera setup: pattern pose in tcp coordinates
   -- 'onboard' camera setup: camera pose in tcp coordinates
-  local H, res, res_angle = calib.calibrate(Hg, Hc)
+  local H, _, _ = calib.calibrate(Hg, Hc)
 
-  if self.configuration.camera_location_mode == 'onboard' then
-    print("Temporary Hand-Eye matrix:") -- TCP <-> Camera
-    print(H)
+  if not ransac_outlier_removal then
+    if self.configuration.camera_location_mode == 'onboard' then
+      print("Temporary Hand-Eye matrix:") -- TCP <-> Camera
+      print(H)
+    else
+      print("Temporary Hand-Pattern matrix:") -- TCP <-> Pattern
+      print(H)
+    end
+    print("#Hc:")
+    print(#Hc)
+    print("#images taken for Hand-Eye/Pattern calib:")
+    print(#imagesTakenForHandPatternCalib)
+    print("images taken for Hand-Eye/Pattern calib:")
+    print(imagesTakenForHandPatternCalib)
   else
-    print("Temporary Hand-Pattern matrix:") -- TCP <-> Pattern
-    print(H)
+    print("#images that might be taken for Hand-Eye/Pattern calib:")
+    print(#imagesTakenForHandPatternCalib)
   end
-  print("#Hc:")
-  print(#Hc)
-  print("#imagesTakenForHandPatternCalib:")
-  print(#imagesTakenForHandPatternCalib)
-  print("imagesTakenForHandPatternCalib:")
-  print(imagesTakenForHandPatternCalib)
 
   local file_output_path = path.join(output_path, 'imagesTakenForHandPatternCalib.t7')
   torch.save(file_output_path, imagesTakenForHandPatternCalib)
@@ -455,6 +558,19 @@ function HandEye:calibrate(imgData)
   local current_output_path = path.join(self.current_path, 'imagesTakenForHandPatternCalib.t7')
   os.execute('rm -f ' .. current_output_path)
   os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+
+  -- RANSAC outlier removal:
+  -- =======================
+  if ransac_outlier_removal then
+    local min_samples = 5
+    local max_trials = 10
+    local rot_thres = 1.0 * M_PI / 180.0 -- 1°
+    local trans_thres = 0.001 -- 1mm
+    local best_Hc_inliers, best_Hg_inliers, best_hand_eye = ransac_hand_eye(Hc, Hg, min_samples, max_trials, rot_thres, trans_thres)
+    Hc = {table.unpack(best_Hc_inliers)}
+    Hg = {table.unpack(best_Hg_inliers)}
+    H = best_hand_eye:clone()
+  end
 
   -- perform cross validation
   local bestHESolution, alignmentErrorTest, alignmentError = calib.calibrateViaCrossValidation(Hg, Hc, #Hg-2, 5)

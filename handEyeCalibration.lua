@@ -50,11 +50,11 @@ local function rotMatrixToAxisAngle(rotation_3x3)
     out = om*theta
   else
     if tr > 0 then   -- case norm(om) = 0          
-      print("Case1")  
-      print(R)
+      --print("Case1")
+      --print(R)
       out = torch.DoubleTensor(3):zero()
     else     
-      print("Case2")
+      --print("Case2")
       local sign = torch.DoubleTensor(3,1)
       sign[1][1] = 1
       sign[{{2,3}, 1}] = (((R[{1,{2,3}}]:ge(0))*2):type('torch.DoubleTensor'))-1 
@@ -206,7 +206,7 @@ end
 -- Algorithm based on paper Tsai and Lenz, 1987
 function xamlaHandEye.calibrate(Hg, Hc)
 
-  print('#Hg='..#Hg..' #Hc='..#Hc)
+  --print('#Hg='..#Hg..' #Hc='..#Hc)
   assert(#Hg == #Hc)
 
   local Hg_ij = {}
@@ -251,7 +251,7 @@ function xamlaHandEye.calibrate(Hg, Hc)
 
   -- solve the equations
   local AtA =  torch.DoubleTensor(3,3):zero()  
-  print('coeff dimensions='..coeff:dim())
+  --print('coeff dimensions='..coeff:dim())
   local Atb = coeff:t() * const
   AtA = coeff:t() * coeff
   local Pcg_p = torch.inverse(AtA) * Atb

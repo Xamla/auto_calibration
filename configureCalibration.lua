@@ -149,6 +149,13 @@ local function selectGripper()
   menu_options[#menu_options + 1] = { 'ESC', 'Quit', false }
   prompt:showMenu('Gripper Selection', menu_options)
   -- Initialize gripper
+  move_group_names = motion_service:queryAvailableMoveGroups()
+  if not table_contains(move_group_names, configuration.move_group_name) then
+    print(string.format("%s is no available move group!", configuration.move_group_name))
+    print("Please choose one of the available move groups.")
+    local choice = prompt:chooseFromList(move_group_names, 'Available move groups:')
+    configuration.move_group_name = choice
+  end
   move_group = motion_service:getMoveGroup(configuration.move_group_name)
   move_group:setVelocityScaling(0.2)
   auto_calibration = ac.AutoCalibration(configuration, move_group, camera_client)
@@ -462,6 +469,13 @@ end
 
 
 local function createMoveGroup()
+  move_group_names = motion_service:queryAvailableMoveGroups()
+  if not table_contains(move_group_names, configuration.move_group_name) then
+    print(string.format("%s is no available move group!", configuration.move_group_name))
+    print("Please choose one of the available move groups.")
+    local choice = prompt:chooseFromList(move_group_names, 'Available move groups:')
+    configuration.move_group_name = choice
+  end
   move_group = motion_service:getMoveGroup(configuration.move_group_name)
   move_group:setVelocityScaling(0.2)
   auto_calibration = ac.AutoCalibration(configuration, move_group, camera_client)
@@ -806,7 +820,7 @@ local function captureSphereSampling_endOfArmCams()
   local recorded_joint_values = {}   -- joint values after getImage calls
   local recorded_joint_tensors = {}  -- joint values as tensor after getImage calls
   local recorded_poses = {}          -- end effector poses after getImage calls
-  local output_directory = path.join(configuration.output_directory, 'capture_shpere_sampling')
+  local output_directory = path.join(configuration.output_directory, 'capture_sphere_sampling')
   print('Deleting output directory')
   os.execute('rm -rf '.. output_directory)
   print('Creating output directory')
@@ -1138,7 +1152,7 @@ local function captureSphereSampling_torsoCams()
   local recorded_joint_values = {}   -- joint values after getImage calls
   local recorded_joint_tensors = {}  -- joint values as tensor after getImage calls
   local recorded_poses = {}          -- end effector poses after getImage calls
-  local output_directory = path.join(configuration.output_directory, 'capture_shpere_sampling')
+  local output_directory = path.join(configuration.output_directory, 'capture_sphere_sampling')
   print('Deleting output directory')
   os.execute('rm -rf '.. output_directory)
   print('Creating output directory')
@@ -1558,6 +1572,13 @@ local function selectCameraReferenceFrame()
   print("      If this is the case, choose the corresponding reference frame (joint), otherwise choose \'BASE\'.")
   printf("Currently selected reference frame: '%s'", configuration.camera_reference_frame)
   local mg_all = motion_service:getMoveGroup(move_group_names[1])
+  move_group_names = motion_service:queryAvailableMoveGroups()
+  if not table_contains(move_group_names, configuration.move_group_name) then
+    print(string.format("%s is no available move group!", configuration.move_group_name))
+    print("Please choose one of the available move groups.")
+    local choice = prompt:chooseFromList(move_group_names, 'Available move groups:')
+    configuration.move_group_name = choice
+  end
   local mg_chosen = motion_service:getMoveGroup(configuration.move_group_name)
   local reference_frames = {}
   table.insert(reference_frames, 'BASE')

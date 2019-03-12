@@ -314,7 +314,15 @@ local function handEye()
   img_data.imgDataRight = right_cam_data
   img_data.jsposes = jsposes
 
-  hand_eye:calibrate(img_data)
+  ransac_outlier_removal = false
+  local menu_options =
+  {
+    { '1', 'with RANSAC outlier removal', function() ransac_outlier_removal = true return false end },
+    { '2', 'without RANSAC outlier removal', function() ransac_outlier_removal = false return false end },
+  }
+  prompt:showMenu('With or without RANSAC outlier removal?', menu_options)
+
+  hand_eye:calibrate(img_data, ransac_outlier_removal)
   prompt:anyKey()
 end
 
