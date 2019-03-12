@@ -485,6 +485,18 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
     --if self.configuration.debug_output then
     imgShowLeft = cv.resize {imgShowLeft, {imgShowLeft:size(2) * 0.5, imgShowLeft:size(1) * 0.5}}
     imgShowRight = cv.resize {imgShowRight, {imgShowRight:size(2) * 0.5, imgShowRight:size(1) * 0.5}}
+    file_output_path = path.join(output_path, 'pattern_distribution_left_cam.png')
+    cv.imwrite {file_output_path, imgShowLeft}
+    link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution_left_cam.png')
+    current_output_path = path.join(self.current_path, 'pattern_distribution_left_cam.png')
+    os.execute('rm -f ' .. current_output_path)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    file_output_path = path.join(output_path, 'pattern_distribution_right_cam.png')
+    cv.imwrite {file_output_path, imgShowRight}
+    link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution_right_cam.png')
+    current_output_path = path.join(self.current_path, 'pattern_distribution_right_cam.png')
+    os.execute('rm -f ' .. current_output_path)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     cv.imshow {"Pattern distribution (left cam)", imgShowLeft}
     cv.waitKey {3000}
     cv.imshow {"Pattern distribution (right cam)", imgShowRight}
@@ -522,6 +534,12 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
     end
     --if self.configuration.debug_output then
     imgShow = cv.resize {imgShow, {imgShow:size(2) * 0.5, imgShow:size(1) * 0.5}}
+    file_output_path = path.join(output_path, 'pattern_distribution.png')
+    cv.imwrite {file_output_path, imgShow}
+    link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution.png')
+    current_output_path = path.join(self.current_path, 'pattern_distribution.png')
+    os.execute('rm -f ' .. current_output_path)
+    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     cv.imshow {"Pattern distribution", imgShow}
     cv.waitKey {3000}
     cv.destroyAllWindows {}
