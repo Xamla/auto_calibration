@@ -91,6 +91,16 @@ local configuration = {
 }
 
 
+local function table_contains(table, element)
+  for _, value in pairs(table) do
+    if value == element then
+      return true
+    end
+  end
+  return false
+end
+
+
 local function setGripper(key)
   configuration.gripper_key = key
   printf('New selected gripper key: %s', configuration.gripper_key)
