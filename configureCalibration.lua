@@ -1019,7 +1019,7 @@ local function captureSphereSampling_endOfArmCams()
     printf('Moveing to movePose #%d ...', cnt)
     -- with this seed being set to random values, we have an arm rebuilding
     local seed = ee.move_group:getCurrentJointValues()
-    seed.values = torch.randn(7) -- 1D Tensor of size 7 filled with random numbers in ]-1,+1[
+    seed.values = torch.randn(seed.values:size(1)) -- 1D Tensor of same size as seed filled with random numbers in ]-1,+1[
     check = movePoseCollisionFree(ee, movePose, seed)
     print("check:")
     print(check)
