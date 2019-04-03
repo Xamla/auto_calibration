@@ -82,7 +82,7 @@ local function runCaptureSequence(wait)
   end
 
   printf('Running capture sequence with %d poses...', #pos_list)
-  print('Folder \'./calibration/capture\' and \'jsposes.t7\' will be deleted. Did you backup your old capture data?')
+  print('Folder \'/tmp/calibration/capture\' and \'jsposes.t7\' will be deleted. Did you backup your old capture data?')
   local go = true
   if wait ~= false then
     print('Press \'Enter\' to continue, \'ESC\' to cancel')
@@ -170,7 +170,7 @@ local function selectCalibrationFolder()
     local generateMenuOptions = function()
 
     -- generate menu options dynamically
-    local directories = findDirectories("._%d%d%d%d%d%d", './calibration')
+    local directories = findDirectories("._%d%d%d%d%d%d", '/tmp/calibration')
     local menu_options = {}
     for key, folder in pairs(directories) do
         menu_options[#menu_options + 1] = {tostring(#menu_options + 1), string.format("Select  ('%s') ", folder), function() selectAndCalibrateMonocularCamera(folder) return false end}
@@ -248,7 +248,7 @@ end
 
 
 local function generateCurrentCapturedImageLog(serial)
-  current_path = './calibration/capture/'
+  current_path = '/tmp/calibration/capture/'
   list_imgs = listCurrentImages(current_path, serial)
   print(list_imgs)
 
@@ -264,7 +264,7 @@ local function handEye()
   prompt:printTitle('Hand-eye Calibration')
 
   --load the jsposes.t7 file
-  local jsposes_fn = './calibration/current/jsposes.t7'
+  local jsposes_fn = '/tmp/calibration/current/jsposes.t7'
   local jsposes
   if path.exists(jsposes_fn) then
     jsposes = torch.load(jsposes_fn)

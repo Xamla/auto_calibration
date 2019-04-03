@@ -141,8 +141,8 @@ function AutoCalibration:__init(configuration, move_group, camera_client, sl_stu
   self.tcp_frame_of_reference, self.tcp_end_effector_name = self:getEndEffectorName()
   --create the calibrate/current folder if it does not exist
   os.execute('mkdir -p ' .. configuration.output_directory)
-  self.current_path = path.join(configuration.output_directory, 'current')
-  os.execute('mkdir -p ' .. self.current_path)
+  --self.current_path = path.join(configuration.output_directory, 'current')
+  --os.execute('mkdir -p ' .. self.current_path)
 
   -- create an output directory path so that jsposes.t7 and the calibration file are stored in the same directory
   self.calibration_folder_name = os.date(configuration.calibration_directory_template)
@@ -444,9 +444,10 @@ end
 
 
 local function tryLoadCurrentCameraCalibration(self, camera_serial)
-  local current_output_directory = path.join(self.configuration.output_directory, 'current')
+  --local current_output_directory = path.join(self.configuration.output_directory, 'current')
   local calibration_fn = string.format('cam_%s.t7', camera_serial)
-  local calibration_file_path = path.join(current_output_directory, calibration_fn)
+  --local calibration_file_path = path.join(current_output_directory, calibration_fn)
+  local calibration_file_path = path.join(self.output_directory, calibration_fn)
 
   printf("Probing for calibration file '%s'.", calibration_file_path)
   if path.exists(calibration_file_path) then
@@ -458,9 +459,10 @@ end
 
 
 local function tryLoadCurrentCameraCalibrationFromStereo(self, camera_left_serial, camera_right_serial)
-  local current_output_directory = path.join(self.configuration.output_directory, 'current')
+  --local current_output_directory = path.join(self.configuration.output_directory, 'current')
   local calibration_fn = string.format('stereo_cams_%s_%s.t7', camera_left_serial, camera_right_serial)
-  local calibration_file_path = path.join(current_output_directory, calibration_fn)
+  --local calibration_file_path = path.join(current_output_directory, calibration_fn)
+  local calibration_file_path = path.join(self.output_directory, calibration_fn)
 
   printf("Probing for calibration file '%s'.", calibration_file_path)
   if path.exists(calibration_file_path) then
@@ -912,7 +914,7 @@ function AutoCalibration:monoCalibration(calibrationFlags, folder, serial)
   elseif image_paths == nil or #image_paths == 0 then
     local current_directory_path = path.join(self.configuration.output_directory, 'capture')
     local pattern = "cam_"..serial.."_%d+%.png$"
-    printf("Looking for images in '%s' with serial '%s'", current_directory_path,pattern)
+    printf("Looking for images in '%s' with serial '%s'", current_directory_path, pattern)
     image_paths = alphanumsort(findImages(current_directory_path, pattern))
     if #image_paths == 0 then
       print('No images found.')
@@ -993,7 +995,7 @@ end
 -- Accesses the self.recorded_poses values
 function AutoCalibration:savePoses()
     local configuration = self.configuration
-    local current_output_directory = path.join(configuration.output_directory, 'current')
+    --local current_output_directory = path.join(configuration.output_directory, 'current')
     local jsposes = {}
     jsposes.recorded_joint_values = {}
     jsposes.recorded_poses = {}
@@ -1037,11 +1039,11 @@ function AutoCalibration:savePoses()
     torch.save(poses_file_path, jsposes)
 
     -- also linking pose file in current directory
-    local current_output_path = path.join(current_output_directory, poses_fn)
-    os.execute('rm -f ' .. current_output_path)
-    local link_target = path.join('..', self.calibration_folder_name, poses_fn)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+    --local current_output_path = path.join(current_output_directory, poses_fn)
+    --os.execute('rm -f ' .. current_output_path)
+    --local link_target = path.join('..', self.calibration_folder_name, poses_fn)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 end
 
 
@@ -1053,9 +1055,9 @@ function AutoCalibration:saveCalibration()
   -- generate output directory path
   local calibration_name = self.calibration_folder_name
   local output_directory = self.output_directory
-  local current_output_directory = path.join(configuration.output_directory, 'current')
+  --local current_output_directory = path.join(configuration.output_directory, 'current')
   os.execute('mkdir -p ' .. output_directory)
-  os.execute('mkdir -p ' .. current_output_directory)
+  --os.execute('mkdir -p ' .. current_output_directory)
 
   if mode == CalibrationMode.SingleCamera then
 
@@ -1070,11 +1072,11 @@ function AutoCalibration:saveCalibration()
     print('Single camera calibration saved to: ' .. calibration_file_path)
 
     -- also linking calibration in current directory
-    local current_output_path = path.join(current_output_directory, calibration_fn)
-    os.execute('rm -f ' .. current_output_path)
-    local link_target = path.join('..', calibration_name, calibration_fn)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+    --local current_output_path = path.join(current_output_directory, calibration_fn)
+    --os.execute('rm -f ' .. current_output_path)
+    --local link_target = path.join('..', calibration_name, calibration_fn)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 
     return true
 
@@ -1096,11 +1098,11 @@ function AutoCalibration:saveCalibration()
     print('Stereo camera calibration saved to: ' .. calibration_file_path)
 
     -- also linking stereo calibration in current directory
-    local current_output_path = path.join(current_output_directory, calibration_fn)
-    os.execute('rm -f ' .. current_output_path)
-    local link_target = path.join('..', calibration_name, calibration_fn)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-    printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+    --local current_output_path = path.join(current_output_directory, calibration_fn)
+    --os.execute('rm -f ' .. current_output_path)
+    --local link_target = path.join('..', calibration_name, calibration_fn)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 
     -- export in xml format
     if xml ~= nil then
@@ -1225,11 +1227,11 @@ function AutoCalibration:exportStereot7AsXmlFiles(path_stereo_calib)
   file:write(s)
   file:close()
   -- create a symbolic link
-  local current_output_path = path.join(self.current_path, 'LeftCameraIntrinsics.xml')
-  os.execute('rm ' .. current_output_path)
-  local link_target = path.join('..', self.calibration_folder_name, 'LeftCameraIntrinsics.xml')
-  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-  printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+  --local current_output_path = path.join(self.current_path, 'LeftCameraIntrinsics.xml')
+  --os.execute('rm ' .. current_output_path)
+  --local link_target = path.join('..', self.calibration_folder_name, 'LeftCameraIntrinsics.xml')
+  --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  --printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 
   print("")
   print("RIGHT CAMERA:")
@@ -1241,11 +1243,11 @@ function AutoCalibration:exportStereot7AsXmlFiles(path_stereo_calib)
   file:write(s)
   file:close()
   -- create a symbolic link
-  current_output_path = path.join(self.current_path, 'RightCameraIntrinsics.xml')
-  os.execute('rm ' .. current_output_path)
-  local link_target = path.join('..', self.calibration_folder_name, 'RightCameraIntrinsics.xml')
-  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-  printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+  --current_output_path = path.join(self.current_path, 'RightCameraIntrinsics.xml')
+  --os.execute('rm ' .. current_output_path)
+  --local link_target = path.join('..', self.calibration_folder_name, 'RightCameraIntrinsics.xml')
+  --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  --printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 
   print("")
   print("FUN MATRIX:")
@@ -1257,9 +1259,9 @@ function AutoCalibration:exportStereot7AsXmlFiles(path_stereo_calib)
   file:write(s)
   file:close()
   -- create a symbolic link
-  current_output_path = path.join(self.current_path, 'StereoCalibration.xml')
-  os.execute('rm ' .. current_output_path)
-  local link_target = path.join('..', self.calibration_folder_name, 'StereoCalibration.xml')
-  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-  printf("Created link in '%s' -> '%s'", current_output_path, link_target)
+  --current_output_path = path.join(self.current_path, 'StereoCalibration.xml')
+  --os.execute('rm ' .. current_output_path)
+  --local link_target = path.join('..', self.calibration_folder_name, 'StereoCalibration.xml')
+  --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  --printf("Created link in '%s' -> '%s'", current_output_path, link_target)
 end

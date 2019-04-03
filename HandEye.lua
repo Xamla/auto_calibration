@@ -74,23 +74,26 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
   self.calibration_folder_name = calibration_folder_name
 
   -- current folder; contains links to the used calibration files
-  self.current_path = path.join(configuration.output_directory, 'current')
+  --self.current_path = path.join(configuration.output_directory, 'current')
 
   local left_camera = self.configuration.cameras[self.configuration.left_camera_id]
   local right_camera = self.configuration.cameras[self.configuration.right_camera_id]
 
   local mode = self.configuration.calibration_mode
+  local output_path = path.join(self.configuration.output_directory, self.calibration_folder_name)
   if mode == CalibrationMode.SingleCamera then
     -- assemble the calibration file name based on the serial of the camera
     if left_camera ~= nil then
       self.left_camera_serial = left_camera.serial
       self.calibration_fn_left = string.format('cam_%s.t7', self.left_camera_serial)
-      self.calibration_path_left = path.join(self.current_path, self.calibration_fn_left)
+      --self.calibration_path_left = path.join(self.current_path, self.calibration_fn_left)
+      self.calibration_path_left = path.join(output_path, self.calibration_fn_left)
     end
     if right_camera ~= nil then
       self.right_camera_serial = right_camera.serial
       self.calibration_fn_right = string.format('cam_%s.t7', self.right_camera_serial)
-      self.calibration_path_right = path.join(self.current_path, self.calibration_fn_right)
+      --self.calibration_path_right = path.join(self.current_path, self.calibration_fn_right)
+      self.calibration_path_right = path.join(output_path, self.calibration_fn_right)
     end
   elseif mode == CalibrationMode.StereoRig then
     -- assemble the stereo calibration file name based on the serials of the cameras
@@ -99,7 +102,8 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
       self.right_camera_serial = right_camera.serial
     end
     self.calibration_fn = string.format('stereo_cams_%s_%s.t7', self.left_camera_serial, self.right_camera_serial)
-    self.stereo_calibration_path = path.join(self.current_path, self.calibration_fn)
+    --self.stereo_calibration_path = path.join(self.current_path, self.calibration_fn)
+    self.stereo_calibration_path = path.join(output_path, self.calibration_fn)
     self:loadStereoCalibration(self.stereo_calibration_path)
   end
   self.tcp_frame_of_reference, self.tcp_end_effector_name = self:getEndEffectorName()
@@ -487,16 +491,16 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
     imgShowRight = cv.resize {imgShowRight, {imgShowRight:size(2) * 0.5, imgShowRight:size(1) * 0.5}}
     file_output_path = path.join(output_path, 'pattern_distribution_left_cam.png')
     cv.imwrite {file_output_path, imgShowLeft}
-    link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution_left_cam.png')
-    current_output_path = path.join(self.current_path, 'pattern_distribution_left_cam.png')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution_left_cam.png')
+    --current_output_path = path.join(self.current_path, 'pattern_distribution_left_cam.png')
+    --os.execute('rm -f ' .. current_output_path)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     file_output_path = path.join(output_path, 'pattern_distribution_right_cam.png')
     cv.imwrite {file_output_path, imgShowRight}
-    link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution_right_cam.png')
-    current_output_path = path.join(self.current_path, 'pattern_distribution_right_cam.png')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution_right_cam.png')
+    --current_output_path = path.join(self.current_path, 'pattern_distribution_right_cam.png')
+    --os.execute('rm -f ' .. current_output_path)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     cv.imshow {"Pattern distribution (left cam)", imgShowLeft}
     cv.waitKey {3000}
     cv.imshow {"Pattern distribution (right cam)", imgShowRight}
@@ -536,10 +540,10 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
     imgShow = cv.resize {imgShow, {imgShow:size(2) * 0.5, imgShow:size(1) * 0.5}}
     file_output_path = path.join(output_path, 'pattern_distribution.png')
     cv.imwrite {file_output_path, imgShow}
-    link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution.png')
-    current_output_path = path.join(self.current_path, 'pattern_distribution.png')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --link_target = path.join('..', self.calibration_folder_name, 'pattern_distribution.png')
+    --current_output_path = path.join(self.current_path, 'pattern_distribution.png')
+    --os.execute('rm -f ' .. current_output_path)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     cv.imshow {"Pattern distribution", imgShow}
     cv.waitKey {3000}
     cv.destroyAllWindows {}
@@ -572,10 +576,10 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
 
   local file_output_path = path.join(output_path, 'imagesTakenForHandPatternCalib.t7')
   torch.save(file_output_path, imagesTakenForHandPatternCalib)
-  local link_target = path.join('..', self.calibration_folder_name, 'imagesTakenForHandPatternCalib.t7')
-  local current_output_path = path.join(self.current_path, 'imagesTakenForHandPatternCalib.t7')
-  os.execute('rm -f ' .. current_output_path)
-  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  --local link_target = path.join('..', self.calibration_folder_name, 'imagesTakenForHandPatternCalib.t7')
+  --local current_output_path = path.join(self.current_path, 'imagesTakenForHandPatternCalib.t7')
+  --os.execute('rm -f ' .. current_output_path)
+  --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
 
   -- RANSAC outlier removal:
   -- =======================
@@ -605,43 +609,43 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
   if self.configuration.camera_location_mode == 'onboard' then
     file_output_path = path.join(output_path, 'HandEye.t7')
     torch.save(file_output_path, bestHESolution)
-    link_target = path.join('..', self.calibration_folder_name, 'HandEye.t7')
-    current_output_path = path.join(self.current_path, 'HandEye.t7')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --link_target = path.join('..', self.calibration_folder_name, 'HandEye.t7')
+    --current_output_path = path.join(self.current_path, 'HandEye.t7')
+    --os.execute('rm -f ' .. current_output_path)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     self.H_camera_to_tcp = bestHESolution
   else
     file_output_path = path.join(output_path, 'HandPattern.t7')
     torch.save(file_output_path, bestHESolution)
-    link_target = path.join('..', self.calibration_folder_name, 'HandPattern.t7')
-    current_output_path = path.join(self.current_path, 'HandPattern.t7')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --link_target = path.join('..', self.calibration_folder_name, 'HandPattern.t7')
+    --current_output_path = path.join(self.current_path, 'HandPattern.t7')
+    --os.execute('rm -f ' .. current_output_path)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     self.H_pattern_to_tcp = bestHESolution
   end
 
   if self.configuration.camera_location_mode == 'onboard' then
     file_output_path = path.join(output_path, 'Hc_patternToCam.t7')
     torch.save(file_output_path, Hc)
-    link_target = path.join('..', self.calibration_folder_name, 'Hc_patternToCam.t7')
-    current_output_path = path.join(self.current_path, 'Hc_patternToCam.t7')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --link_target = path.join('..', self.calibration_folder_name, 'Hc_patternToCam.t7')
+    --current_output_path = path.join(self.current_path, 'Hc_patternToCam.t7')
+    --os.execute('rm -f ' .. current_output_path)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
   else
     file_output_path = path.join(output_path, 'Hc_camToPattern.t7')
     torch.save(file_output_path, Hc)
-    link_target = path.join('..', self.calibration_folder_name, 'Hc_camToPattern.t7')
-    current_output_path = path.join(self.current_path, 'Hc_camToPattern.t7')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --link_target = path.join('..', self.calibration_folder_name, 'Hc_camToPattern.t7')
+    --current_output_path = path.join(self.current_path, 'Hc_camToPattern.t7')
+    --os.execute('rm -f ' .. current_output_path)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
   end
 
   file_output_path = path.join(output_path, 'Hg_tcpToBase.t7')
   torch.save(file_output_path, Hg)
-  link_target = path.join('..', self.calibration_folder_name, 'Hg_tcpToBase.t7')
-  current_output_path = path.join(self.current_path, 'Hg_tcpToBase.t7')
-  os.execute('rm -f ' .. current_output_path)
-  os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+  --link_target = path.join('..', self.calibration_folder_name, 'Hg_tcpToBase.t7')
+  --current_output_path = path.join(self.current_path, 'Hg_tcpToBase.t7')
+  --os.execute('rm -f ' .. current_output_path)
+  --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
 
   -- calculate camera/pattern pose in base coordinates
   if self.configuration.camera_location_mode == 'onboard' then
@@ -650,10 +654,10 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
     print(patternBaseTrafo)
     file_output_path = path.join(output_path, 'PatternBase.t7')
     torch.save(file_output_path, patternBaseTrafo)
-    link_target = path.join('..', self.calibration_folder_name, 'PatternBase.t7')
-    current_output_path = path.join(self.current_path, 'PatternBase.t7')
-    os.execute('rm -f ' .. current_output_path)
-    os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+    --link_target = path.join('..', self.calibration_folder_name, 'PatternBase.t7')
+    --current_output_path = path.join(self.current_path, 'PatternBase.t7')
+    --os.execute('rm -f ' .. current_output_path)
+    --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
     return bestHESolution, patternBaseTrafo
   else
     local cameraBaseTrafo = calc_avg_leftCamBase(bestHESolution, Hg, Hc) --Hg[1] * bestHESolution * Hc[1]
@@ -677,14 +681,14 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
       file_output_path_right = path.join(output_path, string.format('RightCam_%s.t7', self.configuration.camera_reference_frame))
       torch.save(file_output_path, cameraRefFrameTrafo)
       torch.save(file_output_path_right, rightCamRefFrameTrafo)
-      link_target = path.join('..', self.calibration_folder_name, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
-      current_output_path = path.join(self.current_path, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
-      os.execute('rm -f ' .. current_output_path)
-      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
-      link_target = path.join('..', self.calibration_folder_name, string.format('RightCam_%s.t7', self.configuration.camera_reference_frame))
-      current_output_path = path.join(self.current_path, string.format('RightCam_%s.t7', self.configuration.camera_reference_frame))
-      os.execute('rm -f ' .. current_output_path)
-      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+      --link_target = path.join('..', self.calibration_folder_name, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
+      --current_output_path = path.join(self.current_path, string.format('LeftCam_%s.t7', self.configuration.camera_reference_frame))
+      --os.execute('rm -f ' .. current_output_path)
+      --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+      --link_target = path.join('..', self.calibration_folder_name, string.format('RightCam_%s.t7', self.configuration.camera_reference_frame))
+      --current_output_path = path.join(self.current_path, string.format('RightCam_%s.t7', self.configuration.camera_reference_frame))
+      --os.execute('rm -f ' .. current_output_path)
+      --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
       return bestHESolution, cameraRefFrameTrafo
     else
       print("base -> camera trafo (i.e. camera pose in base coordinates):")
@@ -695,10 +699,10 @@ function HandEye:calibrate(imgData, ransac_outlier_removal)
       self.H_cam_to_base = cameraBaseTrafo
       file_output_path = path.join(output_path, 'LeftCamBase.t7')
       torch.save(file_output_path, cameraBaseTrafo)
-      link_target = path.join('..', self.calibration_folder_name, 'LeftCamBase.t7')
-      current_output_path = path.join(self.current_path, 'LeftCamBase.t7')
-      os.execute('rm -f ' .. current_output_path)
-      os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
+      --link_target = path.join('..', self.calibration_folder_name, 'LeftCamBase.t7')
+      --current_output_path = path.join(self.current_path, 'LeftCamBase.t7')
+      --os.execute('rm -f ' .. current_output_path)
+      --os.execute('ln -s -T ' .. link_target .. ' ' .. current_output_path)
       return bestHESolution, cameraBaseTrafo
     end
   end
@@ -795,7 +799,8 @@ end
 -- performs the robot motion
 function HandEye:movePattern()
   -- set the folder to 'current'
-  local files_path = self.current_path
+  --local files_path = self.current_path
+  local files_path = path.join(self.configuration.output_directory, self.calibration_folder_name)
   print('Calling HandEye:movePattern() method')
   --if the calibration data is missing, read it from the file
   if self.configuration.camera_location_mode == 'onboard' then
@@ -990,7 +995,8 @@ end
 
 
 function HandEye:publishHandEye()
-  local files_path = self.current_path
+  --local files_path = self.current_path
+  local files_path = path.join(self.configuration.output_directory, self.calibration_folder_name)
   local interCamTrafo = nil
   if self.configuration.calibration_mode == CalibrationMode.StereoRig then
     local left_cam_serial = self.configuration.cameras[self.configuration.left_camera_id].serial
@@ -1127,7 +1133,8 @@ end
 function HandEye:evaluateCalibrationComplex()
 
   -- set the folder to 'current'
-  local files_path = self.current_path
+  --local files_path = self.current_path
+  local files_path = path.join(self.configuration.output_directory, self.calibration_folder_name)
   -- if the calibration data is missing, read it from the file
   if self.configuration.camera_location_mode == 'onboard' then
     if self.H_camera_to_tcp == nil then
