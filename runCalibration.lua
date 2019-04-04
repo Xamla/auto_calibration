@@ -264,7 +264,12 @@ local function handEye()
   prompt:printTitle('Hand-eye Calibration')
 
   --load the jsposes.t7 file
-  local jsposes_fn = '/tmp/calibration/current/jsposes.t7'
+  --local jsposes_fn = '/tmp/calibration/current/jsposes.t7'
+  print("Enter name of folder containing the jsposes.t7 file (e.g. 2019-04-04_071457)")
+  local folder_name_jsposes = prompt:readLine()
+  local jsposes_fn = path.join(configuration.output_directory, folder_name_jsposes, "jsposes.t7")
+  print("jsposes_fn:")
+  print(jsposes_fn)
   local jsposes
   if path.exists(jsposes_fn) then
     jsposes = torch.load(jsposes_fn)
@@ -272,6 +277,12 @@ local function handEye()
     print('Joint poses file does not exist: '..jsposes_fn)
     return false
   end
+
+  print("Enter name of folder containing the camera calibration (e.g. 2019-04-04_071457)")
+  local folder_name_camcalib = prompt:readLine()
+  local camera_calibration_path = path.join(configuration.output_directory, folder_name_camcalib)
+  print("camera_calibration_path:")
+  print(camera_calibration_path)
 
   local left_cam_data = nil
   local right_cam_data = nil
@@ -322,7 +333,7 @@ local function handEye()
   }
   prompt:showMenu('With or without RANSAC outlier removal?', menu_options)
 
-  hand_eye:calibrate(img_data, ransac_outlier_removal)
+  hand_eye:calibrate(img_data, camera_calibration_path, ransac_outlier_removal)
   prompt:anyKey()
 end
 
@@ -371,7 +382,17 @@ end
 
 local function publishHandEye()
   prompt:printTitle('Publish Hand Eye matrix to rosvita')
-  hand_eye:publishHandEye()
+  print("Enter name of folder containing the hand-eye calibration (e.g. 2019-04-04_071457), or directly press \'Enter\' if you just finished hand-eye calibration and program is still running:")
+  local folder_name_handeye = prompt:readLine()
+  if folder_name_handeye == nil then
+    folder_name_handeye = auto_calibration.calibration_folder_name
+  end
+  local handeye_calibration_path = path.join(configuration.output_directory, folder_name_handeye)
+  print("hand_eye_calibration_path:")
+  print(handeye_calibration_path)
+  print("Enter name of folder containing the camera calibration (e.g. 2019-04-04_071457), or directly press \'Enter\' if you just finished hand-eye calibration and program is still running:")
+  local folder_name_camcalib = prompt:readLine()
+  hand_eye:publishHandEye(handeye_calibration_path, folder_name_camcalib)
 end
 
 local function evaluateCalibrationSimple()

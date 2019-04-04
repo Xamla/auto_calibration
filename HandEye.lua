@@ -73,27 +73,23 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
   self.gripper = gripper
   self.calibration_folder_name = calibration_folder_name
 
+  --[[
   -- current folder; contains links to the used calibration files
-  --self.current_path = path.join(configuration.output_directory, 'current')
-
+  self.current_path = path.join(configuration.output_directory, 'current')
   local left_camera = self.configuration.cameras[self.configuration.left_camera_id]
   local right_camera = self.configuration.cameras[self.configuration.right_camera_id]
-
   local mode = self.configuration.calibration_mode
-  local output_path = path.join(self.configuration.output_directory, self.calibration_folder_name)
   if mode == CalibrationMode.SingleCamera then
     -- assemble the calibration file name based on the serial of the camera
     if left_camera ~= nil then
       self.left_camera_serial = left_camera.serial
       self.calibration_fn_left = string.format('cam_%s.t7', self.left_camera_serial)
-      --self.calibration_path_left = path.join(self.current_path, self.calibration_fn_left)
-      self.calibration_path_left = path.join(output_path, self.calibration_fn_left)
+      self.calibration_path_left = path.join(self.current_path, self.calibration_fn_left)
     end
     if right_camera ~= nil then
       self.right_camera_serial = right_camera.serial
       self.calibration_fn_right = string.format('cam_%s.t7', self.right_camera_serial)
-      --self.calibration_path_right = path.join(self.current_path, self.calibration_fn_right)
-      self.calibration_path_right = path.join(output_path, self.calibration_fn_right)
+      self.calibration_path_right = path.join(self.current_path, self.calibration_fn_right)
     end
   elseif mode == CalibrationMode.StereoRig then
     -- assemble the stereo calibration file name based on the serials of the cameras
@@ -102,10 +98,11 @@ function HandEye:__init(configuration, calibration_folder_name, move_group, moti
       self.right_camera_serial = right_camera.serial
     end
     self.calibration_fn = string.format('stereo_cams_%s_%s.t7', self.left_camera_serial, self.right_camera_serial)
-    --self.stereo_calibration_path = path.join(self.current_path, self.calibration_fn)
-    self.stereo_calibration_path = path.join(output_path, self.calibration_fn)
+    self.stereo_calibration_path = path.join(self.current_path, self.calibration_fn)
     self:loadStereoCalibration(self.stereo_calibration_path)
   end
+  ]]
+
   self.tcp_frame_of_reference, self.tcp_end_effector_name = self:getEndEffectorName()
 end
 
@@ -409,22 +406,38 @@ end
 -- params: imgData = {imgDataLeft = {imagePaths= {}}, imgDataRight = {imagePaths= {}}}
 -- output: Returns the transformation camera_to_tcp or pattern_to_tcp, depending on if we have
 --         an 'onboard' camera setup or an 'extern' camera setup
-function HandEye:calibrate(imgData, ransac_outlier_removal)
+function HandEye:calibrate(imgData, camera_calibration_path, ransac_outlier_removal)
 
   ransac_outlier_removal = ransac_outlier_removal or false
 
   --first load the latest calibration file
   local mode = self.configuration.calibration_mode
+  local left_camera = self.configuration.cameras[self.configuration.left_camera_id]
+  local right_camera = self.configuration.cameras[self.configuration.right_camera_id]
   local success = false
   if mode == CalibrationMode.SingleCamera then
-    if imgData.imgDataLeft ~= nil then
+    -- assemble the calibration file name based on the serial of the camera
+    if left_camera ~= nil and imgData.imgDataLeft ~= nil then
+      self.left_camera_serial = left_camera.serial
+      self.calibration_fn_left = string.format('cam_%s.t7', self.left_camera_serial)
+      self.calibration_path_left = path.join(camera_calibration_path, self.calibration_fn_left)
       print('HandEye:calibrate loading calibration file: '..self.calibration_path_left)
       success = self:loadCalibration(self.calibration_path_left)
-    elseif imgData.imgDataRight ~= nil then
+    elseif right_camera ~= nil and imgData.imgDataRight ~= nil then
+      self.right_camera_serial = right_camera.serial
+      self.calibration_fn_right = string.format('cam_%s.t7', self.right_camera_serial)
+      self.calibration_path_right = path.join(camera_calibration_path, self.calibration_fn_right)
       print('HandEye:calibrate loading calibration file: '..self.calibration_path_right)
       success = self:loadCalibration(self.calibration_path_right)
     end
   elseif mode == CalibrationMode.StereoRig then
+    -- assemble the stereo calibration file name based on the serials of the cameras
+    if left_camera ~= nil and right_camera ~= nil then
+      self.left_camera_serial = left_camera.serial
+      self.right_camera_serial = right_camera.serial
+    end
+    self.calibration_fn = string.format('stereo_cams_%s_%s.t7', self.left_camera_serial, self.right_camera_serial)
+    self.stereo_calibration_path = path.join(camera_calibration_path, self.calibration_fn)
     print('HandEye:calibrate loading calibration file: '..self.stereo_calibration_path)
     success = self:loadStereoCalibration(self.stereo_calibration_path)
   end
@@ -994,16 +1007,26 @@ function HandEye:evaluateCalibration()
 end
 
 
-function HandEye:publishHandEye()
+function HandEye:publishHandEye(files_path, folder_name_camcalib)
   --local files_path = self.current_path
-  local files_path = path.join(self.configuration.output_directory, self.calibration_folder_name)
   local interCamTrafo = nil
+  local success = false
   if self.configuration.calibration_mode == CalibrationMode.StereoRig then
-    local left_cam_serial = self.configuration.cameras[self.configuration.left_camera_id].serial
-    local right_cam_serial = self.configuration.cameras[self.configuration.right_camera_id].serial
-    local stereo_calib_fn = string.format('stereo_cams_%s_%s.t7', left_cam_serial, right_cam_serial)
-    local stereo_calib = torch.load(path.join(files_path, stereo_calib_fn))
-    interCamTrafo = stereo_calib.trafoLeftToRightCam:double()
+    if self.rightLeftCamTrafo ~= nil then
+      interCamTrafo = self.rightLeftCamTrafo:double()
+      success = true
+    else
+      local left_cam_serial = self.configuration.cameras[self.configuration.left_camera_id].serial
+      local right_cam_serial = self.configuration.cameras[self.configuration.right_camera_id].serial
+      local stereo_calib_fn = string.format('stereo_cams_%s_%s.t7', left_cam_serial, right_cam_serial)
+      success = self:loadStereoCalibration(path.join(self.configuration.output_directory, folder_name_camcalib, stereo_calib_fn))
+      if self.rightLeftCamTrafo ~= nil then
+        interCamTrafo = self.rightLeftCamTrafo:double()
+      end
+    end
+  end
+  if success == false then
+    return
   end
   if self.configuration.camera_location_mode == 'onboard' then
     if self.H_camera_to_tcp == nil then
