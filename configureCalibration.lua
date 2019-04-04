@@ -593,7 +593,7 @@ local function movePoseCollisionFree(end_effector, target_pose, seed)
     local plan_parameters = end_effector.move_group:buildPlanParameters(velocity_scaling)
     local seed = seed or end_effector.move_group:getCurrentJointValues()
 
-    local ik_ok, solution =
+    local ik_ok, solution = 
         end_effector.motion_service:queryIK(
         target_pose,
         plan_parameters,
@@ -606,13 +606,21 @@ local function movePoseCollisionFree(end_effector, target_pose, seed)
         return false
     end
     local goal = datatypes.JointValues(seed.joint_set:clone(), solution[1].values)
+
     -- plan trajectory
-    local ok, joint_trajectory, ex_plan_parameters =
-        end_effector.move_group:planMoveJointsCollisionFree(goal, velocity_scaling)
+    --local ok, joint_trajectory, ex_plan_parameters = end_effector.move_group:planMoveJointsCollisionFree(goal, velocity_scaling)
+    local ok, joint_trajectory, ex_plan_parameters = pcall(end_effector.move_group:planMoveJointsCollisionFree(goal, velocity_scaling))
     if ok then
         -- Collision check is not necessary since moveIt will handle the planning?
         -- -> see comment in Xamla/xamlamoveit/motionLibrary/MoveGroup.lua "moveJointsCollisionFree"
-        return end_effector.motion_service:executeJointTrajectory(joint_trajectory, true) -- true for collision check!!!
+        --return end_effector.motion_service:executeJointTrajectory(joint_trajectory, true) -- true for collision check!!!
+        local execute_ok = pcall(end_effector.motion_service:executeJointTrajectory(joint_trajectory, true)) -- true for collision check!!!
+        if execute_ok then
+          return true
+        else
+          print('Could not execute the planned joint trajectory.')
+          return false
+        end
     else
         print('Could not find a path to the given joint values.')
         return false
