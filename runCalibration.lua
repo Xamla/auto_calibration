@@ -280,7 +280,7 @@ local function handEye()
 
   print("Enter name of folder containing the camera calibration (e.g. 2019-04-04_071457), or directly press \'Enter\' if you just finished camera calibration, saved it and program is still running:")
   local folder_name_camcalib = prompt:readLine()
-  if folder_name_camcalib == nil then
+  if folder_name_camcalib == "" then
     folder_name_camcalib = auto_calibration.calibration_folder_name
   end
   local camera_calibration_path = path.join(configuration.output_directory, folder_name_camcalib)
@@ -387,7 +387,7 @@ local function publishHandEye()
   prompt:printTitle('Publish Hand Eye matrix to rosvita')
   print("Enter name of folder containing the hand-eye calibration (e.g. 2019-04-04_071457), or directly press \'Enter\' if you just finished hand-eye calibration and program is still running:")
   local folder_name_handeye = prompt:readLine()
-  if folder_name_handeye == nil then
+  if folder_name_handeye == "" then
     folder_name_handeye = auto_calibration.calibration_folder_name
   end
   local handeye_calibration_path = path.join(configuration.output_directory, folder_name_handeye)
