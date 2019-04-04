@@ -265,7 +265,7 @@ local function handEye()
 
   --load the jsposes.t7 file
   --local jsposes_fn = '/tmp/calibration/current/jsposes.t7'
-  print("Enter name of folder containing the jsposes.t7 file (e.g. 2019-04-04_071457)")
+  print("Enter name of folder containing the jsposes.t7 file (e.g. 2019-04-04_071457):")
   local folder_name_jsposes = prompt:readLine()
   local jsposes_fn = path.join(configuration.output_directory, folder_name_jsposes, "jsposes.t7")
   print("jsposes_fn:")
@@ -278,8 +278,11 @@ local function handEye()
     return false
   end
 
-  print("Enter name of folder containing the camera calibration (e.g. 2019-04-04_071457)")
+  print("Enter name of folder containing the camera calibration (e.g. 2019-04-04_071457), or directly press \'Enter\' if you just finished camera calibration, saved it and program is still running:")
   local folder_name_camcalib = prompt:readLine()
+  if folder_name_camcalib == nil then
+    folder_name_camcalib = auto_calibration.calibration_folder_name
+  end
   local camera_calibration_path = path.join(configuration.output_directory, folder_name_camcalib)
   print("camera_calibration_path:")
   print(camera_calibration_path)

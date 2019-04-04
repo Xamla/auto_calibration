@@ -123,7 +123,7 @@ function HandEye:loadStereoCalibration(stereo_calib_fn)
     return true
   else
     print('Calibration file '..stereo_calib_fn..' does not exist.')
-    print('Please calibrate cameras first.')
+    print('Please calibrate cameras first and don\'t forget to save calibration.')
     return false
   end
 end
@@ -140,7 +140,7 @@ function HandEye:loadCalibration(calib_fn)
     return true
   else
     print('Calibration file '..calib_fn..' does not exist.')
-    print('Please calibrate camera first.')
+    print('Please calibrate camera first and don\'t forget to save calibration.')
     return false
   end
 end
