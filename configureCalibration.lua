@@ -589,11 +589,11 @@ end
 
 
 local function movePoseCollisionFree(end_effector, target_pose, seed)
-    local velocity_scaling = 0.1
+    local velocity_scaling = 0.5
     local plan_parameters = end_effector.move_group:buildPlanParameters(velocity_scaling)
     local seed = seed or end_effector.move_group:getCurrentJointValues()
 
-    local ik_ok, solution = 
+    local ik_ok, solution =
         end_effector.motion_service:queryIK(
         target_pose,
         plan_parameters,
@@ -606,15 +606,14 @@ local function movePoseCollisionFree(end_effector, target_pose, seed)
         return false
     end
     local goal = datatypes.JointValues(seed.joint_set:clone(), solution[1].values)
-
     -- plan trajectory
     --local ok, joint_trajectory, ex_plan_parameters = end_effector.move_group:planMoveJointsCollisionFree(goal, velocity_scaling)
-    local ok, joint_trajectory, ex_plan_parameters = pcall(end_effector.move_group:planMoveJointsCollisionFree(goal, velocity_scaling))
+    local ok, err, joint_trajectory, ex_plan_parameters = pcall(function () return end_effector.move_group:planMoveJointsCollisionFree(goal, velocity_scaling) end)
     if ok then
         -- Collision check is not necessary since moveIt will handle the planning?
         -- -> see comment in Xamla/xamlamoveit/motionLibrary/MoveGroup.lua "moveJointsCollisionFree"
         --return end_effector.motion_service:executeJointTrajectory(joint_trajectory, true) -- true for collision check!!!
-        local execute_ok = pcall(end_effector.motion_service:executeJointTrajectory(joint_trajectory, true)) -- true for collision check!!!
+        local execute_ok = pcall(function () return end_effector.motion_service:executeJointTrajectory(joint_trajectory, true) end) -- true for collision check!!!
         if execute_ok then
           return true
         else
@@ -787,7 +786,7 @@ end
 local function captureSphereSampling_endOfArmCams()
   print('How many? Enter the number of capture poses:')
   local count = prompt:readNumber()
-  local min_radius = 0.4
+  local min_radius = 0.35
   local max_radius = 0.6
   local target_jitter = 0.015
 
@@ -894,9 +893,11 @@ local function captureSphereSampling_endOfArmCams()
     end
 
 
+    cv.imwrite { "calibration/cam_4103189394_001.png", image_left }
+    cv.imwrite { "calibration/cam_4103130811_001.png", image_right }
     -- load images for simulation
-    --image_left = cv.imread { "calibration/cam_4103130811_001.png" }
-    --image_right = cv.imread { "calibration/cam_4103189394_001.png" }
+    --image_left = cv.imread { "calibration/cam_4103189394_001.png" }
+    --image_right = cv.imread { "calibration/cam_4103130811_001.png" }
 
     ok_left, centers_left = cv.findCirclesGrid{ image = image_left,
                                                 patternSize = { height = configuration.circle_pattern_geometry[1], width = configuration.circle_pattern_geometry[2] },
@@ -1035,9 +1036,9 @@ local function captureSphereSampling_endOfArmCams()
     if check then
       sys.sleep(0.5)
 
-      prompt:anyKey()
+      --prompt:anyKey()
 
-            -- Capture images and save joint values and poses:
+      -- Capture images and save joint values and poses:
       if left_camera ~= nil then
         camera_client:setExposure(left_camera.exposure, {left_camera.serial})
         local image = camera_client:getImages({left_camera.serial})
