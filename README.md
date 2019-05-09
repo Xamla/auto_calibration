@@ -21,10 +21,9 @@ It is completely written in LUA and part of the [Rosvita](http://www.rosvita.com
 
 #### Major features are:
 
-1. [Data acquisition (capture images and store robot poses)(#data-acquisition)
-2. [Camera calibration (single and stereo setup)](#camera-calibration)
-3. [Hand-Eye calibration (including evaluation)](#hand-eye-calibration)
-4. [End effector calibration](#end-effector-calibration)
+1. [Camera calibration (single and stereo setup)](#camera-calibration)
+2. [Hand-Eye calibration (including evaluation)](#hand-eye-calibration)
+3. [End effector calibration](#end-effector-calibration)
 
 
 #### Calibration pattern requirements:
@@ -46,27 +45,6 @@ In more detail, the **calibration pipeline** is as follows:
   ```
   **Note**: To permanently save a configuration, it is important to run the configuration script from your projects folder!
 * -> The **configuration main menu** will appear in the terminal.
-  ```
-  |
-  |  Main Menu
-  |________________________
-
-  1 Set calibration mode (SingleCamera)
-  2 Select move-group ('/sda10d')
-  3 Edit camera setup (0 configured, 'extern' setup, 'ximea' type)
-  4 Set circle pattern data (ID: 21, cols: 21, rows: 8, point distance: 0.005000)
-  5 Teach base poses
-  6 Teach capture poses (0 defined)
-  7 Set velocity scaling (0.200000)
-  8 Actuator menu
-  9 Dump configuration
-  a Generate capture poses via sphere sampling (0 defined)
-  g Gripper selection ()
-  e Teach poses for evaluation (0 defined)
-  d Debug output setting (false)
-  s Save configuration
-  ESC Quit
-  ```
   * Now you can select the calibration mode (single or stereo camera setup), the robot move group, the camera type, the circle pattern id and geometry, etc. ...  
   * Moreover, you can teach base poses, capture poses and optionally evaluation poses for the calibration. 
   * **Hint**: Base Poses are mainly used for picking a calibration target. If you don't want to pick a calibration target, only teach a start pose and successively press return afterwards for the remaining base poses.
@@ -77,25 +55,6 @@ In more detail, the **calibration pipeline** is as follows:
   ```
   **Note**: The output directory for your calibration data (image capturing and calibration results) will be "/tmp/calibration/\<data-and-time\>/". Thus, your calibration data will be saved only temporarily. To permanently save calibration results, move them into your project folder!
 * -> The **calibration main menu** will appear in the terminal.
-  ```
-  |
-  |  Main Menu
-  |________________________
-
-  h Move to start pose
-  p Pick calibration target
-  r Return calibration target
-  c Capture calibration images
-  a Calibrate camera
-  b Hand-eye calibration
-  f Full calibraton cycle
-  e Evaluate calibration menu
-  x Close gripper
-  y Open gripper
-  s Save calibration
-  1 Show current configuration
-  ESC Quit
-  ```
   * Now, simply press:
     * f (Full calibraton cycle)  
   * or press the following sequence:
@@ -123,6 +82,15 @@ Then press
 ```
 * b (Hand-eye calibration)
 ```
+Now, you have to enter the name of the folder containing your recorded robot poses and the name of the folder containing the camera calibration.
+
+Moveover you have to choose if you want to use RANSAC outlier removal:
+```
+1 with RANSAC outlier removal
+2 without RANSAC outlier removal
+```
+In particular with large datasets (e.g. obtained via sphere sampling) it is highly recommended to use option 1 (with RANSAC outlier removal), because outlier removal considerably stabilizes the underlying hand-eye calibration algorithm, which is the closed-form solution proposed by [R. Y. Tsai and R. K. Lenz](https://pdfs.semanticscholar.org/19b3/89a797a55c8b63dca8b6d1889df4cff8bfaa.pdf).
+
 You may want to evaluate your hand-eye calibration by some error metrics to be able to compare it with alternative hand-eye calibrations. Thereto, first you have to teach some tcp poses for evaluation (such that the cameras can capture the pattern from different angles and positions):
 ```
 th /home/xamla/Rosvita.Control/lua/auto_calibration/configureCalibration.lua
