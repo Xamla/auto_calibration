@@ -97,8 +97,6 @@ th /home/xamla/Rosvita.Control/lua/auto_calibration/configureCalibration.lua
 * e (Teach poses for evaluation)
 ```
 
-**Note**: Your hand-eye calibration will be saved only temporarily (into "/tmp/calibration/\<date-and-time\>/HandEye.t7"). To permanently save calibration results, move them into your project folder!
-
 
 ### Some notes about the result folder structure of the camera and hand-eye calibration:
 
