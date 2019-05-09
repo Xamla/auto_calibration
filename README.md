@@ -15,16 +15,16 @@ This software is part of [Rosvita](http://www.rosvita.com/), the easiest and fas
 Xamla Autocalibration v1.1
 ```
 
-This package containts scripts for camera and hand-eye calibration 
-and is completely written in LUA.
-It is part of [Rosvita](http://www.rosvita.com/) and fully supported by the Xamla team.
+This package containts scripts for camera and hand-eye calibration, including data acquisition.
+It is completely written in LUA and part of the [Rosvita](http://www.rosvita.com/) robot programming environment.
 
 
 #### Major features are:
 
-1. [Camera calibration (single and stereo setup)](#camera-calibration)
-2. [Hand-Eye calibration (including evaluation)](#hand-eye-calibration)
-3. [End effector calibration](#end-effector-calibration)
+1. [Data acquisition (capture images and store robot poses)(#data-acquisition)
+2. [Camera calibration (single and stereo setup)](#camera-calibration)
+3. [Hand-Eye calibration (including evaluation)](#hand-eye-calibration)
+4. [End effector calibration](#end-effector-calibration)
 
 
 #### Calibration pattern requirements:
@@ -45,17 +45,57 @@ In more detail, the **calibration pipeline** is as follows:
   th /home/xamla/Rosvita.Control/lua/auto_calibration/configureCalibration.lua
   ```
   **Note**: To permanently save a configuration, it is important to run the configuration script from your projects folder!
-* -> The **configuration main menu** will appear in the terminal. 
-  * Now you can select the robot move group, the circle pattern id, the gripper, the camera type, etc. ...  
-  * Moreover, you can teach base poses, capture poses and evaluation poses for the calibration. 
-  * **Hint**: Base Poses are mainly used for picking a calibration target. If you don't want to pick a calibration target, only teach a start pose and successively press return afterwards for the remaining base poses. 
+* -> The **configuration main menu** will appear in the terminal.
+  ```
+  |
+  |  Main Menu
+  |________________________
+
+  1 Set calibration mode (SingleCamera)
+  2 Select move-group ('/sda10d')
+  3 Edit camera setup (0 configured, 'extern' setup, 'ximea' type)
+  4 Set circle pattern data (ID: 21, cols: 21, rows: 8, point distance: 0.005000)
+  5 Teach base poses
+  6 Teach capture poses (0 defined)
+  7 Set velocity scaling (0.200000)
+  8 Actuator menu
+  9 Dump configuration
+  a Generate capture poses via sphere sampling (0 defined)
+  g Gripper selection ()
+  e Teach poses for evaluation (0 defined)
+  d Debug output setting (false)
+  s Save configuration
+  ESC Quit
+  ```
+  * Now you can select the calibration mode (single or stereo camera setup), the robot move group, the camera type, the circle pattern id and geometry, etc. ...  
+  * Moreover, you can teach base poses, capture poses and optionally evaluation poses for the calibration. 
+  * **Hint**: Base Poses are mainly used for picking a calibration target. If you don't want to pick a calibration target, only teach a start pose and successively press return afterwards for the remaining base poses.
   * Don't forget to **save** the configuration by **pressing the 's' button**.
 * Next run the calibration script from your project folder and with the previously saved configuration: 
   ```
   th /home/xamla/Rosvita.Control/lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
   ```
-  **Note**: To permanently save calibration results, it is important to run the calibration script from your projects folder!
+  **Note**: The output directory for your calibration data (image capturing and calibration results) will be "/tmp/calibration/\<data-and-time\>/". Thus, your calibration data will be saved only temporarily. To permanently save calibration results, move them into your project folder!
 * -> The **calibration main menu** will appear in the terminal.
+  ```
+  |
+  |  Main Menu
+  |________________________
+
+  h Move to start pose
+  p Pick calibration target
+  r Return calibration target
+  c Capture calibration images
+  a Calibrate camera
+  b Hand-eye calibration
+  f Full calibraton cycle
+  e Evaluate calibration menu
+  x Close gripper
+  y Open gripper
+  s Save calibration
+  1 Show current configuration
+  ESC Quit
+  ```
   * Now, simply press:
     * f (Full calibraton cycle)  
   * or press the following sequence:
@@ -63,8 +103,8 @@ In more detail, the **calibration pipeline** is as follows:
     * a (Calibrate camera)
     * s (Save calibration)
     * b (Hand-eye calibration)
-    * e (Evaluate calibration)
-  * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
+    * e (Evaluate calibration) (optionally)
+  * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before. You will have to enter the name of the folder (\<data-and-time\>) containing the recorded robot poses and the name of the folder containing the camera calibration (probably the same).
   * **Note**: For all calibration processes one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (**Patterns_with_ID.pdf**) is required.
   
 ### Hand eye calibration
