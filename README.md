@@ -62,7 +62,7 @@ In more detail, the **calibration pipeline** is as follows:
     * s (Save calibration)
     * b (Hand-eye calibration)
     * e (Evaluate calibration) (optionally)
-  * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before. You will have to enter the name of the folder (``<date>_<time>``) containing the recorded robot poses and the name of the folder containing the camera calibration (probably the same).
+  * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before.
   * **Note**: For all calibration processes one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (**Patterns_with_ID.pdf**) is required.
 
 
@@ -82,7 +82,7 @@ Then press
 ```
 * b (Hand-eye calibration)
 ```
-Now, you have to enter the name of the folder containing your recorded robot poses and the name of the folder containing the camera calibration.
+Now, you have to enter the name of the folder (``<date>_<time>``) containing your recorded robot poses and the name of the folder containing the camera calibration (probably the same).
 
 Moveover you have to choose if you want to use RANSAC outlier removal:
 ```
