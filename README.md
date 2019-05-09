@@ -52,7 +52,7 @@ In more detail, the **calibration pipeline** is as follows:
   ```
   th /home/xamla/Rosvita.Control/lua/auto_calibration/runCalibration.lua -cfg <name_of_your_saved_configuration_file>.t7
   ```
-  **Note**: The output directory for your calibration data (image capturing and calibration results) will be "/tmp/calibration/\<date-and-time\>/". Thus, your calibration data will be saved only temporarily. To permanently save calibration results, move them into your project folder!
+  **Note**: The output directory for your calibration data (image capturing and calibration results) will be ``/tmp/calibration/<date>_<time>/``. Thus, your calibration data will be saved only temporarily. To permanently save calibration results, move them into your project folder!
 * -> The **calibration main menu** will appear in the terminal.
   * Now, simply press:
     * f (Full calibraton cycle)  
@@ -62,7 +62,7 @@ In more detail, the **calibration pipeline** is as follows:
     * s (Save calibration)
     * b (Hand-eye calibration)
     * e (Evaluate calibration) (optionally)
-  * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before. You will have to enter the name of the folder (\<date-and-time\>) containing the recorded robot poses and the name of the folder containing the camera calibration (probably the same).
+  * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before. You will have to enter the name of the folder (``<date>_<time>``) containing the recorded robot poses and the name of the folder containing the camera calibration (probably the same).
   * **Note**: For all calibration processes one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (**Patterns_with_ID.pdf**) is required.
 
 
