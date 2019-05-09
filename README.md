@@ -21,9 +21,8 @@ It is completely written in LUA and part of the [Rosvita](http://www.rosvita.com
 
 #### Major features are:
 
-1. [Camera calibration (single and stereo setup)](#camera-calibration)
+1. [Camera calibration (single and stereo setup) including data acquisition](#camera-calibration)
 2. [Hand-Eye calibration (including evaluation)](#hand-eye-calibration)
-3. [End effector calibration](#end-effector-calibration)
 
 
 #### Calibration pattern requirements:
@@ -65,7 +64,8 @@ In more detail, the **calibration pipeline** is as follows:
     * e (Evaluate calibration) (optionally)
   * **Note**: Hand-eye calibration will only be possible, if you saved the camera calibration before. You will have to enter the name of the folder (\<date-and-time\>) containing the recorded robot poses and the name of the folder containing the camera calibration (probably the same).
   * **Note**: For all calibration processes one of our [circle patterns with ids](https://github.com/Xamla/auto_calibration/blob/master/Patterns_with_ID.pdf) (**Patterns_with_ID.pdf**) is required.
-  
+
+
 ### Hand eye calibration
 
 In case of an **onboard camera setup**, the hand-eye calibration detects the transformation (rotation and translation) between the tool center point (tcp) of the robot and a previously calibrated camera system mounted on the robot.
@@ -99,19 +99,9 @@ th /home/xamla/Rosvita.Control/lua/auto_calibration/configureCalibration.lua
 
 **Note**: Your hand-eye calibration will be saved only temporarily (into "/tmp/calibration/\<date-and-time\>/HandEye.t7"). To permanently save calibration results, move them into your project folder!
 
-### End effector calibration
 
-Calibration of an end effector, e.g. a gripper tip can be performed by running the script **endEffectorCalibration.lua**:
-```
-th /home/xamla/Rosvita.Control/lua/auto_calibration/endEffectorCalibration.lua
-```
-
-To calibrate the end effector (e.g. the gripper tip), it has to be moved to a fixed point from at least 4 or better more different directions.
-
-To relocate the tool center point (tcp) to the end effector in Rosvita, add a **tcp_link** to the file **robotModel/main.xacro** of your project folder. As **origin xyz** of your new tcp_link choose the **translation vector of** your calculated **tcp<->end effector transformation**. Then compile the **main.xacro** and adapt your robot configuration ("tip link" of move group and "parent link" of end effector). For more details see the terminal output when running the script.
-  
-  
 ### Some notes about the result folder structure of the camera and hand-eye calibration:
+
 * Captured images will be stored in ``/tmp/calibration/capture/``
 * Robot poses will be stored in ``/tmp/calibration/<date>_<time>/jsposes.t7``
 * Stereo calibration will be stored in ``/tmp/calibration/<date>_<time>/stereo_cams_<serial1>_<serial2>.t7``
@@ -119,4 +109,4 @@ To relocate the tool center point (tcp) to the end effector in Rosvita, add a **
 * For an extern stereo setup, hand-pattern calibration will be stored in ``/tmp/calibration/<date>_<time>/HandPattern.t7``, and moreover the pose of the left camera relative to the robot base will be stored in ``/tmp/calibration/<date>_<time>/LeftCamBase.t7``
 * For an on-board stereo setup, hand-eye (with 'eye' = left cam) calibration will be stored in ``/tmp/calibration/<date>_<time>/HandEye.t7``, and moreover the pose of the pattern relative to the robot base will be stored in ``/tmp/calibration/<date>_<time>/PatternBase.t7``
 
-> **_NOTE:_**  In order to save disk space and do not get confused with too many calibration results, this storage is only a temporary one. That means, all calibration results, image capturings and pose recordings will get lost if the Rosvita image is stopped. To permanently save the best calibration result, move the corresponding folder with into your project folder.
+> **_NOTE:_**  In order to save disk space and to not get confused with too many calibration results, this storage is only a temporary one. That means, all calibration results, image capturings and pose recordings will get lost if the Rosvita image is stopped. To permanently save the best calibration result, move the corresponding folder into your project folder.
