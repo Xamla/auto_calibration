@@ -83,7 +83,7 @@ def main():
     world_view_folder = '/Calibration'
     storage_folder = '/tmp/calibration/storage_tooltipcalib'
 
-    offline = True
+    offline = False
 
     tooltip_calib = TooltipCalibration(pattern_localizer, stereocalib_sensorhead_cams, left_serial, right_serial, exposure_time,
                                        world_view_client, world_view_folder, move_group, torso_to_cam, storage_folder, torso_link_name,

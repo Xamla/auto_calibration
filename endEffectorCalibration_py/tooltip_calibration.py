@@ -49,7 +49,7 @@ class TooltipCalibration(object):
     sys.stdin.read(1)
 
     if not os.path.isdir(self.storage_folder) :
-      os.mkdir(self.storage_folder)
+      os.makedirs(self.storage_folder)
 
     image_left = None
     image_right = None
