@@ -131,8 +131,8 @@ function main()
   local end_effector = move_group:getEndEffector()
 
   -- If we have already saved joint sets:
-  --local joint_names = move_group:getJointNames()
-  --local saved_joint_values = {}
+  local joint_names = move_group:getJointNames()
+  local saved_joint_values = {}
   --for i = 1,8 do
   --  local jv = torch.load(string.format("sphere_point_in_joint_values_%d.t7", i))
   --  saved_joint_values[#saved_joint_values + 1] = datatypes.JointValues(datatypes.JointSet(joint_names), jv)
