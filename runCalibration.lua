@@ -41,7 +41,7 @@ local offline
 
 
 local function moveToStartPose(wait)
-  print('Moving to start pose...')
+  print('Moving to start pose collision free...')
   if wait ~= false then
     prompt:anyKey('press key when ready')
   end
@@ -98,6 +98,29 @@ local function runCaptureSequence(wait)
       auto_calibration:runCaptureSequence()
     end
   end
+end
+
+
+local function captureSphereSampling_endOfArmCams()
+  prompt:printTitle('Capture sphere sampling with end-of-arm cameras')
+  auto_calibration:captureSphereSampling_endOfArmCams()
+  return false
+end
+
+local function captureSphereSampling_torsoCams()
+  prompt:printTitle('Capture sphere sampling with torso cameras')
+  auto_calibration:captureSphereSampling_torsoCams()
+  return false
+end
+
+local function captureSphereSampling()
+  local menu_options =
+  {
+    { 'e', 'end-of-arm camera setup', captureSphereSampling_endOfArmCams },
+    { 't', 'torso camera setup', captureSphereSampling_torsoCams },
+    { 'ESC', 'Return to main menu...', false }
+  }
+  prompt:showMenu('Capture Sphere Sampling', menu_options)
 end
 
 
@@ -440,6 +463,7 @@ local function showMainMenu()
     { 'p', 'Pick calibration target', pickCalibrationTarget },
     { 'r', 'Return calibration target', returnCalibrationTarget },
     { 'c', 'Capture calibration images', runCaptureSequence },
+    { 'd', 'Capture sphere sampling', captureSphereSampling },
     { 'a', 'Calibrate camera', calibrateCamera },
     { 'b', 'Hand-eye calibration', handEye },
     { 'f', 'Full calibraton cycle', runFullCycle },
